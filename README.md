@@ -6,6 +6,10 @@
 
 > ℹ️ hogandoc の機能・特徴の説明はここに追記してください（このリポジトリには配布物のみが置かれています）。
 
+## スクリーンショット
+
+![hogandoc スクリーンショット](docs/images/screenshot-01.png)
+
 ## ダウンロード
 
 最新版は以下から入手できます（常に最新リリースを指します）。
@@ -36,7 +40,8 @@
 
 ## ライセンス
 
-> ℹ️ ライセンスをここに記載してください。
+本ソフトウェアはプロプライエタリ（独自ライセンス）です。詳細は [LICENSE](LICENSE) を参照してください。
+Copyright (c) 2026 Tomoyuki Nakama. All rights reserved.
 
 ---
 
@@ -45,6 +50,10 @@
 This is the distribution repository for **hogandoc**, a shape/diagram editing application. Prebuilt binaries for Windows / macOS / Linux are published as GitHub Releases.
 
 > ℹ️ Add a description of hogandoc's features here. This repository contains distribution artifacts only.
+
+### Screenshot
+
+![hogandoc screenshot](docs/images/screenshot-01.png)
 
 ### Download
 
@@ -70,4 +79,5 @@ See the [Releases page](https://github.com/TomoyukiNakama/hogandoc/releases) for
 
 ### License
 
-> ℹ️ Add the license here.
+This software is proprietary. See [LICENSE](LICENSE) for details.
+Copyright (c) 2026 Tomoyuki Nakama. All rights reserved.

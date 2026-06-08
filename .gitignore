@@ -7,3 +7,10 @@
 
 # zip 展開先のステージングディレクトリ / staging dir for extracted assets
 /dist/
+
+# Claude 運用ガイド（公開せずローカル限定 / kept local, not published）
+CLAUDE.md
+claude.md
+
+# Claude 関連のローカル設定 / Claude local settings — not published
+.claude/

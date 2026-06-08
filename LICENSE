@@ -1,0 +1,50 @@
+hogandoc — Proprietary License / プロプライエタリ ライセンス
+
+Copyright (c) 2026 Tomoyuki Nakama. All rights reserved.
+（著作権者：Tomoyuki Nakama。無断複製・転載を禁じます。）
+
+------------------------------------------------------------------------
+English
+------------------------------------------------------------------------
+This repository distributes the prebuilt binaries of the "hogandoc"
+software. The software is proprietary and is NOT open-source.
+
+Permitted:
+  - Downloading the released binaries for personal or internal use.
+  - Running the software as distributed.
+
+Not permitted without prior written permission from the copyright holder:
+  - Redistributing, selling, sublicensing, or publicly mirroring the
+    binaries.
+  - Modifying, decompiling, disassembling, or reverse-engineering the
+    software, except to the extent expressly permitted by applicable law.
+  - Removing or altering any copyright, trademark, or other proprietary
+    notices.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+------------------------------------------------------------------------
+日本語
+------------------------------------------------------------------------
+本リポジトリは、ソフトウェア「hogandoc」のビルド済みバイナリを配布する
+ものです。本ソフトウェアはプロプライエタリ（独自）であり、オープン
+ソースではありません。
+
+許可される行為：
+  - 個人または組織内での利用を目的とした、公開バイナリのダウンロード。
+  - 配布された状態のまま本ソフトウェアを実行すること。
+
+著作権者の事前の書面による許可なく行うことを禁止する行為：
+  - バイナリの再配布、販売、サブライセンス、公開ミラーリング。
+  - 適用法令で明示的に認められる範囲を除く、改変・逆コンパイル・
+    逆アセンブル・リバースエンジニアリング。
+  - 著作権表示・商標表示その他の権利表示の削除または改変。
+
+本ソフトウェアは「現状有姿」で提供され、商品性、特定目的への適合性、
+権利非侵害を含むいかなる明示または黙示の保証も伴いません。著作権者は、
+本ソフトウェアまたはその利用に起因・関連して生じたいかなる請求・損害・
+責任についても、一切の責任を負いません。
