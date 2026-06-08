@@ -1,0 +1,9 @@
+# リリースバイナリ（Git にはコミットせず GitHub Release で配布する）
+# Release binaries — never committed to Git; distributed via GitHub Releases
+*.zip
+*.AppImage
+*.dmg
+*.msi
+
+# zip 展開先のステージングディレクトリ / staging dir for extracted assets
+/dist/
