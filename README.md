@@ -4,7 +4,6 @@
 
 図形編集ソフトウェア **hogandoc** の配布リポジトリです。Windows / macOS / Linux 向けのビルド済みバイナリを GitHub Release で公開しています。
 
-> ℹ️ hogandoc の機能・特徴の説明はここに追記してください（このリポジトリには配布物のみが置かれています）。
 
 ## スクリーンショット
 
@@ -49,7 +48,6 @@ Copyright (c) 2026 Tomoyuki Nakama. All rights reserved.
 
 This is the distribution repository for **hogandoc**, a shape/diagram editing application. Prebuilt binaries for Windows / macOS / Linux are published as GitHub Releases.
 
-> ℹ️ Add a description of hogandoc's features here. This repository contains distribution artifacts only.
 
 ### Screenshot
 
