@@ -4,13 +4,13 @@
 
 図形編集ソフトウェア **hogandoc** の配布リポジトリです。Windows / macOS / Linux 向けのビルド済みバイナリを GitHub Release で公開しています。
 
-## 機能
-
-OpenXMLで定義されている図形187種類をコピー&ペースして図形の
-
 ## スクリーンショット
 
 ![hogandoc スクリーンショット](docs/images/screenshot-01.png)
+
+## 機能
+
+Microsoft OfficeのOpen XMLベースの図形(DrawingML)がアプリケーション内で利用できるようになりました。ExcelやWordで作成した図形をコピーしてhogandocに貼り付けすることができます。
 
 ## ダウンロード
 
@@ -51,6 +51,7 @@ Copyright (c) 2026 Tomoyuki Nakama. All rights reserved.
 
 This is the distribution repository for **hogandoc**, a shape/diagram editing application. Prebuilt binaries for Windows / macOS / Linux are published as GitHub Releases.
 
+> ℹ️ Add a description of hogandoc's features here. This repository contains distribution artifacts only.
 
 ### Screenshot
 
