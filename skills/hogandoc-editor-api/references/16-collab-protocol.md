@@ -816,3 +816,7 @@ LLM / スクリプトに「文書 JSON と Op の正確な形」を渡すため�
 - `add.value` / `update.patch` / `replace_document.document` は型で縛れない（`object.type` で変わる）ため schema 上は任意値。description で `document` schema の `$defs` を参照させている。
 - `description` は Rust の doc コメント由来。単位（mm / pt）や座標系が分かるコメントを図形のフィールドに書くことが、そのまま LLM への説明になる。
 - 呼ぶたびに値が変わる `serde(default = ...)`（`Run.id` の UUID）は `schemars(transform = schema_strip_default)` で `default` を落とす。生成物が非決定的になり、同期テストが常に落ちるため。
+- 配布（plan_443）: `scripts/package-skill.sh` が SKILL.md と本書・schema・examples を
+  `references/` に同梱した自己完結の skill を組み立て、`release.yml` の `skill` job が
+  `hogandoc-editor-api-skill.zip` を Release に添付しつつ、公開リポジトリ
+  `TomoyukiNakama/hogandoc` の `skills/hogandoc-editor-api/` へ push する。
