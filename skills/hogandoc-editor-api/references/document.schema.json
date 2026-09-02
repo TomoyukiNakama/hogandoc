@@ -1,0 +1,3548 @@
+{
+  "type": "object",
+  "properties": {
+    "templates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Template"
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Section"
+      }
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Page"
+      }
+    },
+    "section_page_counts": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0
+      },
+      "description": "Number of pages in each section. `section_page_counts[i]` = page count for `sections[i]`."
+    },
+    "compound_shape_templates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CompoundShapeTemplate"
+      },
+      "description": "Document-wide library of CompoundShape templates. Each instance on a\npage references one of these templates by ID."
+    },
+    "custom_arrows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CustomArrow"
+      },
+      "description": "Document-wide library of user-defined arrow shapes (plan_202).\nReferenced from [`ArrowShape::Custom`] on Line / Curve / Connector\nendpoints."
+    },
+    "view_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ViewState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Persisted view state read from / written to the file (plan_204).\nNot part of the editable content; injected into the snapshot at save\ntime and consumed once at open time, so the live document keeps it\n`None` to avoid spurious dirty flags from scrolling/zooming."
+    }
+  },
+  "required": [
+    "templates",
+    "sections",
+    "pages",
+    "section_page_counts",
+    "compound_shape_templates",
+    "custom_arrows"
+  ],
+  "description": "`GET /api/v1/docs/{doc_id}` の `document`、`PUT` のボディ、`replace_document` Op の `document`。同期対象外の `view_state` は API では返らず、`pages[].page_no` は受信側が再計算する（docs/16 §4）。位置・寸法（x, y, width, height, 角丸, 余白, dash）は mm、線幅（thickness / stroke_width / border_width）は pt、`Run.font_size` と `InputField.font_size` は論理 px（96dpi。pt × 96/72）、回転は度（時計回り）。原点はページ左上、y 軸は下向き。色は `#` 無しの 6 桁 RGB hex。ID は UUIDv7 文字列で、`Run.id` を省略すると自動採番される。\n\nTop-level document.\nPages are stored in a flat Vec for efficient access; section boundaries\nare tracked via `section_page_counts`.\nTemplates are stored as named reusable assets at document level.",
+  "title": "hogandoc Document",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Template": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "header": {
+          "$ref": "#/$defs/TemplateRegion"
+        },
+        "content": {
+          "$ref": "#/$defs/TemplateRegion"
+        },
+        "footer": {
+          "$ref": "#/$defs/TemplateRegion"
+        }
+      },
+      "required": [
+        "name",
+        "header",
+        "content",
+        "footer"
+      ],
+      "description": "Named page template applied to sections.\nStored at document level and referenced by name from sections."
+    },
+    "TemplateRegion": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "number",
+          "format": "float",
+          "description": "Height in mm."
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Line"
+          },
+          "description": "Lines (罫線) belonging to this region. y-coords are region-local just\nlike `Block.y`, so the same `abs_y → region` resolution rules apply."
+        },
+        "curves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Curve"
+          },
+          "description": "Curves (cubic Bezier) belonging to this region. The four control point\ny-coords are region-local; bucketing uses the midpoint of all four ys."
+        },
+        "connectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Connector"
+          },
+          "description": "Connectors belonging to this region. Free-floating connectors store\n`source_y` / `target_y` region-local; attached connectors keep block\nreferences and resolve coordinates against the template's block set."
+        },
+        "compound_shapes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompoundShapeInstance"
+          },
+          "description": "Compound shape instances. `inst.y` is region-local just like `Block.y`."
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Group"
+          },
+          "description": "Object groups inside this region. Each group references region-local\nobject IDs (block / line / curve / connector / compound_shape).\nGroups never span regions — header / content / footer keep their own."
+        }
+      },
+      "required": [
+        "height",
+        "blocks",
+        "lines",
+        "curves",
+        "connectors",
+        "compound_shapes",
+        "groups"
+      ]
+    },
+    "Block": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7). Generate a fresh UUIDv7 for `add`; must match `object.id`."
+        },
+        "x": {
+          "type": "number",
+          "format": "float",
+          "description": "X position in mm."
+        },
+        "y": {
+          "type": "number",
+          "format": "float",
+          "description": "Y position in mm."
+        },
+        "z": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Z-order (higher = closer to front)."
+        },
+        "width": {
+          "type": "number",
+          "format": "float",
+          "description": "Width in mm."
+        },
+        "height": {
+          "type": "number",
+          "format": "float",
+          "description": "Height in mm."
+        },
+        "word_wrap": {
+          "type": "boolean",
+          "description": "Whether text wraps at the block boundary."
+        },
+        "text_insets": {
+          "$ref": "#/$defs/TextInsets",
+          "description": "Inner text insets in mm (per side). Used by Text blocks when laying\nout their runs; shape blocks keep label padding on\n`ShapeLabel.insets` instead. Round-trips with DrawingML `bodyPr`\nlIns/tIns/rIns/bIns.",
+          "default": {
+            "left": 0.800000011920929,
+            "top": 0.800000011920929,
+            "right": 0.800000011920929,
+            "bottom": 0.800000011920929
+          }
+        },
+        "line_spacing": {
+          "$ref": "#/$defs/LineSpacing",
+          "description": "Line spacing for Text-block runs. Default `Multiple(1.0)` = the\nhistorical `(asc+desc)*1.2` line height. Round-trips with\nDrawingML `<a:lnSpc>`.",
+          "default": {
+            "Multiple": 1.0
+          }
+        },
+        "text_align": {
+          "$ref": "#/$defs/TextAlign",
+          "description": "Text alignment (left, center, right)."
+        },
+        "vertical_align": {
+          "$ref": "#/$defs/VerticalAlign",
+          "description": "Vertical alignment (top, middle, bottom)."
+        },
+        "content": {
+          "$ref": "#/$defs/BlockContent",
+          "description": "What the block draws: `{\"Text\": [runs]}`, `{\"Image\": {...}}`, `{\"Rect\": {...}}` etc.\n(externally tagged enum, see `BlockContent`)."
+        },
+        "border_color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Border color as 6-digit hex (e.g. \"000000\"). None = default per block type."
+        },
+        "border_width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "description": "Border width in points. None = default (1pt)."
+        },
+        "border_visible": {
+          "type": "boolean",
+          "description": "Whether the border is visible. Default true."
+        },
+        "background_color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Background color as 6-digit hex (e.g. \"FFFF00\"). None = transparent.\n\nOverloaded by block kind: for Text / Image / Input blocks this is the\nblock rectangle's background; for shape blocks (Rect / Circle /\nTriangle / Diamond / Callout) it is the *shape interior fill\noverride* (`\"NONE\"` = no fill). Resolve it through\n[`crate::render_geometry::resolve_shape_fill`] rather than reading it\ndirectly, so every render surface agrees."
+        },
+        "background_gradient": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gradient"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional gradient fill, taking precedence over `background_color`\n(plan_300). Carries the same block-kind overload as\n`background_color`: block rectangle background for Text / Image /\nInput, shape interior fill for shape blocks.\n\nInvariant: whenever this is `Some`, `background_color` holds\n[`Gradient::base_hex`] so code paths that don't understand gradients\n(older files, degrade targets, unported render surfaces) still show a\nsensible solid color.",
+          "default": null
+        },
+        "corner_radius": {
+          "type": "number",
+          "format": "float",
+          "description": "Corner radius in mm applied to the block's border + background fill.\nDefault `0.0` = sharp corners. For Text / Image / Input blocks this\nis the only corner-radius field; for shape blocks (Rect / Triangle /\nDiamond) the dedicated `RectData / TriangleData / DiamondData\n.corner_radius` is the source of truth, so `Block::corner_radius`\nstays at 0.0 there. Use `Block::effective_corner_radius()` to read\nthe right value generically without inspecting `BlockContent`."
+        },
+        "rotation": {
+          "type": "number",
+          "format": "float",
+          "description": "Clockwise rotation in degrees (0.0..360.0) applied around the block's\nbounding-box center. Default `0.0` = no rotation. Applies to every\nblock kind (Rect / Circle / Triangle / Diamond / Text / Image / Input)."
+        },
+        "bound_compound_shape_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "If set, this block is visually bound to a CompoundShape instance\n(typically a label dropped on the shape via double-click). When\nbound, the block's own background fill is suppressed and edits\nto its background color are routed to the bound CompoundShape's\n`fill_color_override` so the fill follows the shape's outline,\nnot the label's rectangle."
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShapeLabel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional embedded text label for shape blocks (Rect / Circle /\nTriangle / Diamond). Painted inside the block's content area with\n`padding` inset on all sides. Always `None` for Text / Image /\nInput blocks; their content kind already carries text or imagery."
+        },
+        "auto_size": {
+          "$ref": "#/$defs/AutoSize",
+          "description": "Auto-size behavior (plan_341). Only consulted for Text blocks.",
+          "default": "None"
+        },
+        "writing_mode": {
+          "$ref": "#/$defs/WritingMode",
+          "description": "Writing direction (plan_342). Only consulted for Text blocks.",
+          "default": "Horizontal"
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShapeShadow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Drop shadow (plan_339). Rendered for shape blocks\n(Rect/Circle/Triangle/Diamond); ignored for text/image/input\nblocks. `None` = no shadow.",
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "x",
+        "y",
+        "z",
+        "width",
+        "height",
+        "word_wrap",
+        "text_align",
+        "vertical_align",
+        "content",
+        "border_visible",
+        "corner_radius",
+        "rotation"
+      ],
+      "description": "A rectangular block positioned on a page."
+    },
+    "TextInsets": {
+      "type": "object",
+      "properties": {
+        "left": {
+          "type": "number",
+          "format": "float"
+        },
+        "top": {
+          "type": "number",
+          "format": "float"
+        },
+        "right": {
+          "type": "number",
+          "format": "float"
+        },
+        "bottom": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "left",
+        "top",
+        "right",
+        "bottom"
+      ],
+      "description": "Per-side inner text insets in mm. Maps 1:1 to DrawingML `bodyPr`'s\n`lIns` / `tIns` / `rIns` / `bIns` so Office round-trips preserve\nasymmetric margins."
+    },
+    "LineSpacing": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Multiple": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "required": [
+            "Multiple"
+          ],
+          "additionalProperties": false,
+          "description": "Multiplier on the standard line height `(asc + desc) * 1.2`.\n`1.0` = unchanged."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ExactPt": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "required": [
+            "ExactPt"
+          ],
+          "additionalProperties": false,
+          "description": "Fixed line height in points."
+        }
+      ],
+      "description": "Line spacing for a text block / shape label. Maps to DrawingML\n`<a:lnSpc>`: `Multiple` ↔ `spcPct` (ratio pass-through), `ExactPt` ↔\n`spcPts`. The default `Multiple(1.0)` keeps the historical line height\n`(ascent + descent) * 1.2` and is intentionally NOT exported as\n`lnSpc` (plan_257: spcPct is relative to the font's natural line\nheight, so always emitting 120% widened Excel's line spacing)."
+    },
+    "TextAlign": {
+      "type": "string",
+      "enum": [
+        "Left",
+        "Center",
+        "Right"
+      ],
+      "description": "Text alignment within a block."
+    },
+    "VerticalAlign": {
+      "type": "string",
+      "enum": [
+        "Top",
+        "Middle",
+        "Bottom"
+      ],
+      "description": "Vertical alignment within a block."
+    },
+    "BlockContent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Text": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Run"
+              }
+            }
+          },
+          "required": [
+            "Text"
+          ],
+          "additionalProperties": false,
+          "description": "Text block with runs."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Image": {
+              "$ref": "#/$defs/ImageData"
+            }
+          },
+          "required": [
+            "Image"
+          ],
+          "additionalProperties": false,
+          "description": "Image block."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Rect": {
+              "$ref": "#/$defs/RectData"
+            }
+          },
+          "required": [
+            "Rect"
+          ],
+          "additionalProperties": false,
+          "description": "Rectangle shape block."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Circle": {
+              "$ref": "#/$defs/CircleData"
+            }
+          },
+          "required": [
+            "Circle"
+          ],
+          "additionalProperties": false,
+          "description": "Circle shape block."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Triangle": {
+              "$ref": "#/$defs/TriangleData"
+            }
+          },
+          "required": [
+            "Triangle"
+          ],
+          "additionalProperties": false,
+          "description": "Triangle shape block."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Diamond": {
+              "$ref": "#/$defs/DiamondData"
+            }
+          },
+          "required": [
+            "Diamond"
+          ],
+          "additionalProperties": false,
+          "description": "Diamond (rhombus) shape block."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Callout": {
+              "$ref": "#/$defs/CalloutData"
+            }
+          },
+          "required": [
+            "Callout"
+          ],
+          "additionalProperties": false,
+          "description": "MS Office 互換の吹き出し(callout)。本体＋可動の矢印(しっぽ)。\nジオメトリは OOXML プリセット(`preset` + `adjusts`)から評価する\n(`preset_geom::build_preset_geometry`)。plan_250。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Table": {
+              "$ref": "#/$defs/TableData"
+            }
+          },
+          "required": [
+            "Table"
+          ],
+          "additionalProperties": false,
+          "description": "表(テーブル)。行・列・セルを持ち、セルごとにテキストを保持する。\nplan_358。"
+        }
+      ],
+      "description": "Content of a block."
+    },
+    "Run": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7), consistent with every other document object.\nRuns are split and merged constantly while editing: a split gives the\ntrailing half a fresh id and the leading half keeps the original, and\na merge keeps the leading run's id."
+        },
+        "font_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_size": {
+          "type": "number",
+          "format": "float",
+          "description": "フォントサイズ。単位はアプリ論理 px (96dpi) — pt ではない。\n[`FONT_PX_TO_PT`] / [`FONT_PT_TO_PX`] 参照。"
+        },
+        "font_color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bold": {
+          "type": "boolean"
+        },
+        "italic": {
+          "type": "boolean"
+        },
+        "underline": {
+          "type": "boolean"
+        },
+        "strikethrough": {
+          "type": "boolean"
+        },
+        "text_align": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextAlign"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per-paragraph horizontal alignment override. Resolved by looking\nat the run that contains the paragraph's start byte: when `Some`,\nthat paragraph (and its wrapped lines) align according to this\nvalue; when `None`, the containing block's `text_align` is used\nas a fallback. Storing this on the run lets a single block hold\nparagraphs with different alignments without a separate\nper-paragraph data structure."
+        },
+        "para": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ParagraphStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per-paragraph style (spacing / indents / line-spacing override).\nSame resolution rule as `text_align`: the run containing the\nparagraph's start byte carries the style. `None` = all defaults.",
+          "default": null
+        },
+        "letter_spacing_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "description": "Extra letter spacing in pt added to each glyph-cluster advance\n(plan_340). Negative narrows. `None` = normal spacing. Mirrors ODF\n`fo:letter-spacing` and DrawingML `rPr@spc` (1/100 pt).",
+          "default": null
+        },
+        "script": {
+          "$ref": "#/$defs/RunScript",
+          "description": "Superscript / subscript (plan_340). Rendered at 58% of `font_size`\nwith a baseline shift of ±33% (the LibreOffice defaults); line\nheight is computed from the *unscaled* size so scripts don't change\nline spacing. Mirrors ODF `style:text-position` and DrawingML\n`rPr@baseline` (both quantized to Super/Sub on import).",
+          "default": "Normal"
+        },
+        "highlight": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Text highlight color (RGB hex without `#`) painted behind the run\n(plan_340). Mirrors ODF `fo:background-color` (text-properties) and\nDrawingML `<a:highlight>`.",
+          "default": null
+        },
+        "content": {
+          "$ref": "#/$defs/RunContent"
+        }
+      },
+      "required": [
+        "font_size",
+        "bold",
+        "italic",
+        "underline",
+        "strikethrough",
+        "content"
+      ],
+      "description": "A run of text with uniform formatting."
+    },
+    "ParagraphStyle": {
+      "type": "object",
+      "properties": {
+        "space_before_pt": {
+          "type": "number",
+          "format": "float",
+          "description": "Space before the paragraph's first line (pt). DrawingML `spcBef`.",
+          "default": 0.0
+        },
+        "space_after_pt": {
+          "type": "number",
+          "format": "float",
+          "description": "Space after the paragraph's last line (pt). DrawingML `spcAft`.",
+          "default": 0.0
+        },
+        "indent_left_mm": {
+          "type": "number",
+          "format": "float",
+          "description": "Left indent (mm). DrawingML `marL`.",
+          "default": 0.0
+        },
+        "indent_right_mm": {
+          "type": "number",
+          "format": "float",
+          "description": "Right indent (mm). DrawingML `marR`.",
+          "default": 0.0
+        },
+        "first_line_indent_mm": {
+          "type": "number",
+          "format": "float",
+          "description": "First-line indent (mm); negative = hanging indent. DrawingML\n`indent`.",
+          "default": 0.0
+        },
+        "line_spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineSpacing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per-paragraph line-spacing override; `None` = the block / label\nvalue.",
+          "default": null
+        }
+      },
+      "description": "Per-paragraph style. Held by the run containing the paragraph's start\nbyte (same resolution rule as [`Run::text_align`]), so a flat\n`Vec<Run>` can carry paragraphs with differing spacing / indents\nwithout a separate paragraph structure. Maps to DrawingML `<a:pPr>`:\nspcBef / spcAft / marL / marR / indent / lnSpc."
+    },
+    "RunScript": {
+      "type": "string",
+      "enum": [
+        "Normal",
+        "Super",
+        "Sub"
+      ],
+      "description": "Superscript / subscript state of a [`Run`] (plan_340)."
+    },
+    "RunContent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Input": {
+              "$ref": "#/$defs/InputField"
+            }
+          },
+          "required": [
+            "Input"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Content of a run: either text or input (exclusive)."
+    },
+    "InputField": {
+      "type": "object",
+      "properties": {
+        "input_id": {
+          "type": "string"
+        },
+        "input_type": {
+          "$ref": "#/$defs/InputType"
+        },
+        "value": {
+          "type": "string"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "number",
+          "format": "float"
+        },
+        "height": {
+          "type": "number",
+          "format": "float"
+        },
+        "font_size": {
+          "type": "number",
+          "format": "float",
+          "description": "Font size in points for rendering the input value."
+        },
+        "font_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Font family name (None = system default)."
+        },
+        "bold": {
+          "type": "boolean",
+          "description": "Bold style."
+        },
+        "italic": {
+          "type": "boolean",
+          "description": "Italic style."
+        },
+        "underline": {
+          "type": "boolean",
+          "description": "Underline style."
+        },
+        "strikethrough": {
+          "type": "boolean",
+          "description": "Strikethrough style."
+        },
+        "font_color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Font color as hex string (e.g. \"FF0000\"), None = black."
+        }
+      },
+      "required": [
+        "input_id",
+        "input_type",
+        "value",
+        "nullable",
+        "width",
+        "height",
+        "font_size",
+        "bold",
+        "italic",
+        "underline",
+        "strikethrough"
+      ],
+      "description": "Input field definition."
+    },
+    "InputType": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Text": {
+              "type": "object",
+              "properties": {
+                "format": {
+                  "$ref": "#/$defs/InputFormat"
+                },
+                "string_length": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "integer_digits": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "decimal_digits": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "min_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "max_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "threshold_action": {
+                  "$ref": "#/$defs/ThresholdAction"
+                }
+              },
+              "required": [
+                "format",
+                "threshold_action"
+              ]
+            }
+          },
+          "required": [
+            "Text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Select": {
+              "type": "object",
+              "properties": {
+                "format": {
+                  "$ref": "#/$defs/InputFormat"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/SelectOption"
+                  }
+                },
+                "min_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "max_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "threshold_action": {
+                  "$ref": "#/$defs/ThresholdAction"
+                }
+              },
+              "required": [
+                "format",
+                "options",
+                "threshold_action"
+              ]
+            }
+          },
+          "required": [
+            "Select"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Checkbox": {
+              "type": "object",
+              "properties": {
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/CheckboxOption"
+                  }
+                },
+                "layout": {
+                  "$ref": "#/$defs/RadioLayout"
+                }
+              },
+              "required": [
+                "options",
+                "layout"
+              ]
+            }
+          },
+          "required": [
+            "Checkbox"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Radio": {
+              "type": "object",
+              "properties": {
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/RadioOption"
+                  }
+                },
+                "layout": {
+                  "$ref": "#/$defs/RadioLayout"
+                }
+              },
+              "required": [
+                "options",
+                "layout"
+              ]
+            }
+          },
+          "required": [
+            "Radio"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Number": {
+              "type": "object",
+              "properties": {
+                "display_format": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "integer_digits": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "decimal_digits": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "min_value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double"
+                },
+                "max_value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double"
+                },
+                "threshold_action": {
+                  "$ref": "#/$defs/ThresholdAction"
+                },
+                "unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "threshold_action"
+              ]
+            }
+          },
+          "required": [
+            "Number"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Decimal": {
+              "type": "object",
+              "properties": {
+                "display_format": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "integer_digits": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "decimal_digits": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "min_value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double"
+                },
+                "max_value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double"
+                },
+                "threshold_action": {
+                  "$ref": "#/$defs/ThresholdAction"
+                },
+                "unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "threshold_action"
+              ]
+            }
+          },
+          "required": [
+            "Decimal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Date": {
+              "type": "object",
+              "properties": {
+                "display_format": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "min_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "max_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "threshold_action": {
+                  "$ref": "#/$defs/ThresholdAction"
+                }
+              },
+              "required": [
+                "threshold_action"
+              ]
+            }
+          },
+          "required": [
+            "Date"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Time": {
+              "type": "object",
+              "properties": {
+                "display_format": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "min_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "max_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "threshold_action": {
+                  "$ref": "#/$defs/ThresholdAction"
+                }
+              },
+              "required": [
+                "threshold_action"
+              ]
+            }
+          },
+          "required": [
+            "Time"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "DateTime": {
+              "type": "object",
+              "properties": {
+                "display_format": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "min_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "max_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "threshold_action": {
+                  "$ref": "#/$defs/ThresholdAction"
+                }
+              },
+              "required": [
+                "threshold_action"
+              ]
+            }
+          },
+          "required": [
+            "DateTime"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "InputFormat": {
+      "type": "string",
+      "enum": [
+        "String",
+        "Number",
+        "Date",
+        "Time",
+        "DateTime"
+      ],
+      "description": "Data format applied to Text and Select inputs."
+    },
+    "ThresholdAction": {
+      "type": "string",
+      "enum": [
+        "None",
+        "Warning",
+        "Reject"
+      ],
+      "description": "Action taken when a value falls outside the min/max range."
+    },
+    "SelectOption": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "description": "A single select option with display label and stored value."
+    },
+    "CheckboxOption": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "description": "A single checkbox item within a checkbox group."
+    },
+    "RadioLayout": {
+      "type": "string",
+      "enum": [
+        "Horizontal",
+        "Vertical"
+      ],
+      "description": "Layout direction for radio button / checkbox groups."
+    },
+    "RadioOption": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "description": "A single radio option with display label and stored value."
+    },
+    "ImageData": {
+      "type": "object",
+      "properties": {
+        "mime_type": {
+          "type": "string"
+        },
+        "src_text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "src_mime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "src_data": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "default": null
+        },
+        "width": {
+          "type": "number",
+          "format": "float"
+        },
+        "height": {
+          "type": "number",
+          "format": "float"
+        },
+        "keep_aspect_ratio": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mime_type",
+        "width",
+        "height",
+        "keep_aspect_ratio"
+      ],
+      "description": "Serialized form of [`ImageData`] (plan_288). The in-memory `src` keeps the\n`data:<mime>;base64,` URI, but persisting that string would embed base64\n(+33%) inside the binary .jhg format, so a data-URI src is split into its\nmime and raw bytes (msgpack bin via `serde_bytes`) at the serde boundary.\nNon-data-URI srcs (empty placeholder, external refs) pass through as text.\nOnly .jhg uses serde — the XML format has its own hand-written writer."
+    },
+    "RectData": {
+      "type": "object",
+      "properties": {
+        "fill_color": {
+          "type": "string",
+          "description": "Fill color as 6-digit hex (e.g. \"FFFFFF\")."
+        },
+        "stroke_color": {
+          "type": "string",
+          "description": "Stroke (border) color as 6-digit hex (e.g. \"000000\")."
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float",
+          "description": "Stroke width in points."
+        },
+        "corner_radius": {
+          "type": "number",
+          "format": "float",
+          "description": "Corner radius in mm (0 = sharp corners)."
+        },
+        "stroke_style": {
+          "$ref": "#/$defs/StrokeStyle",
+          "description": "Stroke style (solid, dashed, double)."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Consulted only when\n`stroke_style == StrokeStyle::Dashed`."
+        },
+        "stroke_visible": {
+          "type": "boolean",
+          "description": "Whether the stroke (outline) is drawn."
+        }
+      },
+      "required": [
+        "fill_color",
+        "stroke_color",
+        "stroke_width",
+        "corner_radius",
+        "stroke_style",
+        "dash_pattern",
+        "stroke_visible"
+      ],
+      "description": "Data for a rectangle shape block."
+    },
+    "StrokeStyle": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Solid",
+            "Dashed",
+            "Double"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "Wavy",
+          "description": "Sinusoidal wavy outline. Renders via the same `paint_wavy_polyline`\nhelper used by Line / Curve / Connector so wavy strokes look\nidentical regardless of which kind of object draws them."
+        }
+      ],
+      "description": "Stroke style for shape outlines."
+    },
+    "DashPattern": {
+      "type": "object",
+      "properties": {
+        "dash_mm": {
+          "type": "number",
+          "format": "float",
+          "description": "Length of one dash in mm."
+        },
+        "gap_mm": {
+          "type": "number",
+          "format": "float",
+          "description": "Gap between two consecutive dashes in mm."
+        }
+      },
+      "required": [
+        "dash_mm",
+        "gap_mm"
+      ],
+      "description": "Customisable parameters for the `Dashed` stroke style. Both fields\nare in millimetres so the visual pitch is independent of the line's\nstroke thickness — matching the user's intent of predictable dash\npatterns. Carriers store a `DashPattern` regardless of their current\n`LineStyle` / `StrokeStyle`; the value is only consulted by the\ndashed renderer, so non-dashed objects pay nothing for it."
+    },
+    "CircleData": {
+      "type": "object",
+      "properties": {
+        "fill_color": {
+          "type": "string",
+          "description": "Fill color as 6-digit hex (e.g. \"FFFFFF\")."
+        },
+        "stroke_color": {
+          "type": "string",
+          "description": "Stroke (border) color as 6-digit hex (e.g. \"000000\")."
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float",
+          "description": "Stroke width in points."
+        },
+        "stroke_style": {
+          "$ref": "#/$defs/StrokeStyle",
+          "description": "Stroke style (solid, dashed, double)."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Consulted only when\n`stroke_style == StrokeStyle::Dashed`."
+        },
+        "stroke_visible": {
+          "type": "boolean",
+          "description": "Whether the stroke (outline) is drawn."
+        }
+      },
+      "required": [
+        "fill_color",
+        "stroke_color",
+        "stroke_width",
+        "stroke_style",
+        "dash_pattern",
+        "stroke_visible"
+      ],
+      "description": "Data for a circle shape block."
+    },
+    "TriangleData": {
+      "type": "object",
+      "properties": {
+        "fill_color": {
+          "type": "string",
+          "description": "Fill color as 6-digit hex (e.g. \"FFFFFF\")."
+        },
+        "stroke_color": {
+          "type": "string",
+          "description": "Stroke (border) color as 6-digit hex (e.g. \"000000\")."
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float",
+          "description": "Stroke width in points."
+        },
+        "corner_radius": {
+          "type": "number",
+          "format": "float",
+          "description": "Corner radius in mm (0 = sharp corners)."
+        },
+        "stroke_style": {
+          "$ref": "#/$defs/StrokeStyle",
+          "description": "Stroke style (solid, dashed, double)."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Consulted only when\n`stroke_style == StrokeStyle::Dashed`."
+        },
+        "stroke_visible": {
+          "type": "boolean",
+          "description": "Whether the stroke (outline) is drawn."
+        }
+      },
+      "required": [
+        "fill_color",
+        "stroke_color",
+        "stroke_width",
+        "corner_radius",
+        "stroke_style",
+        "dash_pattern",
+        "stroke_visible"
+      ],
+      "description": "Data for a triangle shape block."
+    },
+    "DiamondData": {
+      "type": "object",
+      "properties": {
+        "fill_color": {
+          "type": "string",
+          "description": "Fill color as 6-digit hex (e.g. \"FFFFFF\")."
+        },
+        "stroke_color": {
+          "type": "string",
+          "description": "Stroke (border) color as 6-digit hex (e.g. \"000000\")."
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float",
+          "description": "Stroke width in points."
+        },
+        "corner_radius": {
+          "type": "number",
+          "format": "float",
+          "description": "Corner radius in mm (0 = sharp corners). Each of the four\nvertices is replaced by an inscribed arc of this radius;\nthe stroke follows the rounded outline so visual consistency\nwith rect / triangle is preserved."
+        },
+        "stroke_style": {
+          "$ref": "#/$defs/StrokeStyle",
+          "description": "Stroke style (solid, dashed, double)."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Consulted only when\n`stroke_style == StrokeStyle::Dashed`."
+        },
+        "stroke_visible": {
+          "type": "boolean",
+          "description": "Whether the stroke (outline) is drawn."
+        }
+      },
+      "required": [
+        "fill_color",
+        "stroke_color",
+        "stroke_width",
+        "corner_radius",
+        "stroke_style",
+        "dash_pattern",
+        "stroke_visible"
+      ],
+      "description": "Data for a diamond (rhombus) shape block."
+    },
+    "CalloutData": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "description": "OOXML preset id (ST_ShapeType), e.g. \"wedgeRectCallout\"."
+        },
+        "adjusts": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "description": "Adjustment value overrides as `(name, fmla)` where fmla is `\"val N\"`.\nEmpty = use the preset definition's defaults."
+        },
+        "fill_color": {
+          "type": "string",
+          "description": "Fill color as 6-digit hex (e.g. \"FFFFFF\"), or \"NONE\"."
+        },
+        "stroke_color": {
+          "type": "string",
+          "description": "Stroke (border) color as 6-digit hex (e.g. \"000000\")."
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float",
+          "description": "Stroke width in points."
+        },
+        "stroke_style": {
+          "$ref": "#/$defs/StrokeStyle",
+          "description": "Stroke style (solid, dashed, double, wavy)."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Consulted only when\n`stroke_style == StrokeStyle::Dashed`."
+        },
+        "stroke_visible": {
+          "type": "boolean",
+          "description": "Whether the stroke (outline) is drawn."
+        },
+        "origin": {
+          "$ref": "#/$defs/ShapeFamily",
+          "description": "作成元のパレット / 取込形式(plan_404)。旧ファイルは属性が無いので\n`DrawingMl`。表示は [`CalloutData::family`] を使う。",
+          "default": "drawingml"
+        }
+      },
+      "required": [
+        "preset",
+        "adjusts",
+        "fill_color",
+        "stroke_color",
+        "stroke_width",
+        "stroke_style",
+        "dash_pattern",
+        "stroke_visible"
+      ],
+      "description": "Data for a callout (吹き出し) shape block. plan_250.\n\nThe geometry is not stored explicitly; it is evaluated on demand from the\nOOXML preset definition (`preset`, e.g. \"wedgeRectCallout\") plus the\nadjustment values (`adjusts`, in `(name, \"val N\")` form) via\n`preset_geom::build_preset_geometry`. The movable arrow (\"tail\") is driven\nby the preset's adjustment handles (`preset_geom::preset_adjust_handles`).\nBlock geometry (x/y/width/height/rotation/label) is reused from `Block`."
+    },
+    "ShapeFamily": {
+      "type": "string",
+      "enum": [
+        "hogandoc",
+        "drawingml",
+        "drawio",
+        "odf"
+      ],
+      "description": "図形ファミリ(plan_404)。プロパティパネルの「種別」に\n`四角形 (hogandoc)` / `角丸四角形 (drawingml)` のように併記する。\n\n- `Hogandoc`: hogandoc 固有の図形(Rect / Circle / Line / 手組みの複合図形 等)。\n- `DrawingMl` / `DrawIo` / `Odf`: サイドバーの各パレット、または各形式の\n  取込で作られた preset 図形・複合図形。\n\nODF / draw.io パレットの preset id は DrawingML と同じ id(`rect` 等)を\n共有するためデータからは由来を判別できず、`CalloutData::origin` に\n作成元を保持する。`Default` は preset 図形の既定由来 `DrawingMl`。"
+    },
+    "TableData": {
+      "type": "object",
+      "properties": {
+        "col_widths": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "description": "列幅 (mm)。要素数が列数。"
+        },
+        "row_heights": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "description": "行高 (mm)。要素数が行数。"
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TableCell"
+          },
+          "description": "セル (row-major, `rows * cols` 個)。"
+        },
+        "stroke_color": {
+          "type": "string",
+          "description": "罫線の色 (6桁 hex)。"
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float",
+          "description": "罫線の太さ (pt)。"
+        },
+        "stroke_style": {
+          "$ref": "#/$defs/StrokeStyle",
+          "description": "罫線のスタイル。"
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "破線パターン (mm)。`stroke_style == Dashed` のときのみ参照。"
+        },
+        "stroke_visible": {
+          "type": "boolean",
+          "description": "罫線を描画するか。"
+        },
+        "fill_color": {
+          "type": "string",
+          "description": "既定のセル塗り (6桁 hex または \"NONE\")。`TableCell::fill_color` が\n`None` のセルに適用される。"
+        },
+        "header_fill": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ヘッダ行(先頭行)の塗り。`None` = 通常のセルと同じ。",
+          "default": null
+        }
+      },
+      "required": [
+        "col_widths",
+        "row_heights",
+        "cells",
+        "stroke_color",
+        "stroke_width",
+        "stroke_style",
+        "dash_pattern",
+        "stroke_visible",
+        "fill_color"
+      ],
+      "description": "Data for a table (表) block. plan_358.\n\n行数 = `row_heights.len()`、列数 = `col_widths.len()`。`cells` は\nrow-major で長さが `rows * cols` に等しいことを不変条件とする（結合で\n覆われたセルも要素としては保持し、`row_span == 0` で表す）。\n\n`Block::width` / `Block::height` は列幅・行高の総和と一致させる\n（[`TableData::resize_to`] がリサイズ時の比例配分を行う）。セル矩形と\n罫線分の算出は `render_geometry::table_cell_rects` /\n`render_geometry::table_grid_lines` を唯一の真実源とし、canvas / PDF /\nSVG / ODF / DrawingML はすべてそこを経由する。"
+    },
+    "TableCell": {
+      "type": "object",
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Run"
+          },
+          "description": "セル内テキスト。"
+        },
+        "row_span": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "縦方向の結合数。`1` = 非結合、`0` = 上のセルに覆われている。"
+        },
+        "col_span": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "横方向の結合数。`1` = 非結合、`0` = 左のセルに覆われている。"
+        },
+        "fill_color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "セル個別の塗り。`None` = [`TableData::fill_color`]。",
+          "default": null
+        },
+        "text_align": {
+          "$ref": "#/$defs/TextAlign"
+        },
+        "vertical_align": {
+          "$ref": "#/$defs/VerticalAlign"
+        },
+        "insets": {
+          "$ref": "#/$defs/TextInsets"
+        },
+        "word_wrap": {
+          "type": "boolean"
+        },
+        "line_spacing": {
+          "$ref": "#/$defs/LineSpacing",
+          "default": {
+            "Multiple": 1.0
+          }
+        },
+        "borders": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CellBorders"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "セル個別の罫線(plan_378)。`None` = 表の `stroke_*` に従う。\nExcel 貼り付けのように「セルごとに線の有無・太さ・色が違う」表を\n表現する。隣接セルと共有する辺の解決は\n`render_geometry::table_border_segments` 参照。"
+        }
+      },
+      "required": [
+        "runs",
+        "row_span",
+        "col_span",
+        "text_align",
+        "vertical_align",
+        "insets",
+        "word_wrap"
+      ],
+      "description": "表の 1 セル。テキストは既存の [`Run`] 列をそのまま使うので、書式・\nレイアウト (`layout::text::build_text_block`)・IME が共有できる。"
+    },
+    "CellBorders": {
+      "type": "object",
+      "properties": {
+        "top": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CellBorder"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CellBorder"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bottom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CellBorder"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CellBorder"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "セルの 4 辺。各辺 `None` = 表の既定に従う。"
+    },
+    "CellBorder": {
+      "type": "object",
+      "properties": {
+        "width_pt": {
+          "type": "number",
+          "format": "float"
+        },
+        "color": {
+          "type": "string",
+          "description": "RGB hex(`#` なし)。"
+        },
+        "style": {
+          "$ref": "#/$defs/StrokeStyle",
+          "default": "Solid"
+        }
+      },
+      "required": [
+        "width_pt",
+        "color"
+      ],
+      "description": "セルの 1 辺の罫線。`width_pt == 0.0` は「引かない」。"
+    },
+    "Gradient": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/GradientKind",
+          "default": "Linear"
+        },
+        "angle": {
+          "type": "number",
+          "format": "float",
+          "description": "度。CSS / gpui 準拠で 0 = 上向き、時計回り。`Radial` では無視。",
+          "default": 0.0
+        },
+        "stops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GradientStop"
+          }
+        }
+      },
+      "required": [
+        "stops"
+      ],
+      "description": "グラデーション塗り。\n\n不変条件（`normalize` が保証する）:\n- `stops.len()` は `2..=MAX_GRADIENT_STOPS`\n- `stops` は `pos` 昇順\n- すべての `pos` は `0.0..=1.0`"
+    },
+    "GradientKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "Linear",
+          "description": "線形。`Gradient::angle` の向きに色が変化する。"
+        },
+        {
+          "type": "string",
+          "const": "Radial",
+          "description": "放射（中心から外周へ）。`Gradient::angle` は無視される。"
+        }
+      ],
+      "description": "グラデーションの種別。"
+    },
+    "GradientStop": {
+      "type": "object",
+      "properties": {
+        "pos": {
+          "type": "number",
+          "format": "float",
+          "description": "グラデーション線上の位置 `0.0..=1.0`。"
+        },
+        "color": {
+          "type": "string",
+          "description": "`RRGGBB` または `RRGGBBAA`（`#` なし）。塗りなしの `\"NONE\"`\nセンチネルはここには入らない（グラデーション自体を `None` に\nすることで表現する）。"
+        }
+      },
+      "required": [
+        "pos",
+        "color"
+      ],
+      "description": "1つのカラーストップ。"
+    },
+    "ShapeLabel": {
+      "type": "object",
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Run"
+          }
+        },
+        "text_align": {
+          "$ref": "#/$defs/TextAlign"
+        },
+        "vertical_align": {
+          "$ref": "#/$defs/VerticalAlign"
+        },
+        "word_wrap": {
+          "type": "boolean"
+        },
+        "insets": {
+          "$ref": "#/$defs/TextInsets",
+          "description": "Per-side padding inside the shape's visible bbox in mm.\nRound-trips with DrawingML `bodyPr` lIns/tIns/rIns/bIns.",
+          "default": {
+            "left": 1.0,
+            "top": 1.0,
+            "right": 1.0,
+            "bottom": 1.0
+          }
+        },
+        "line_spacing": {
+          "$ref": "#/$defs/LineSpacing",
+          "description": "Line spacing for the label runs. Default `Multiple(1.0)` = the\nhistorical `(asc+desc)*1.2` line height. Round-trips with\nDrawingML `<a:lnSpc>`.",
+          "default": {
+            "Multiple": 1.0
+          }
+        }
+      },
+      "required": [
+        "runs",
+        "text_align",
+        "vertical_align",
+        "word_wrap"
+      ],
+      "description": "Optional text label embedded in a CompoundShapeInstance. The label has\nno background or border of its own — those are conceptually the shape's\nfill / stroke. Painted inside the shape's visible bbox with `padding`\ninset (mm) on all sides."
+    },
+    "AutoSize": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "None",
+          "description": "Fixed box (default) — text may overflow / clip."
+        },
+        {
+          "type": "string",
+          "const": "GrowHeight",
+          "description": "Block height follows the laid-out content height after editing."
+        },
+        {
+          "type": "string",
+          "const": "ShrinkText",
+          "description": "Font sizes are scaled down at render time so the content fits\nthe fixed box (never scaled up)."
+        }
+      ],
+      "description": "Auto-size behavior of a Text block (plan_341). Mirrors ODF\n`draw:auto-grow-height` / `draw:fit-to-size` and DrawingML bodyPr\n`<a:spAutoFit/>` / `<a:normAutofit/>`."
+    },
+    "WritingMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "Horizontal",
+          "description": "Horizontal, left-to-right lines top-to-bottom (default)."
+        },
+        {
+          "type": "string",
+          "const": "VerticalRl",
+          "description": "Vertical, top-to-bottom columns right-to-left (ODF `tb-rl`).\nRendered as a 90°-rotated horizontal layout (all glyphs rotate —\nCJK upright composition is a future plan; see plan_342)."
+        }
+      ],
+      "description": "Writing direction of a Text block (plan_342). Mirrors ODF\n`style:writing-mode` and DrawingML `bodyPr@vert`."
+    },
+    "ShapeShadow": {
+      "type": "object",
+      "properties": {
+        "offset_x_mm": {
+          "type": "number",
+          "format": "float"
+        },
+        "offset_y_mm": {
+          "type": "number",
+          "format": "float"
+        },
+        "color": {
+          "type": "string",
+          "description": "RGB hex without `#`."
+        },
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "offset_x_mm",
+        "offset_y_mm",
+        "color",
+        "opacity"
+      ],
+      "description": "Drop shadow for shape-like objects (plan_339). Mirrors ODF\n`draw:shadow-*` (graphic-properties) and DrawingML `a:outerShdw`.\nOffset is in page mm (applied after rotation, matching LibreOffice);\n`opacity` is 0.0..=1.0 (1.0 = opaque)."
+    },
+    "Line": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7). Generate a fresh UUIDv7 for `add`; must match `object.id`."
+        },
+        "x1": {
+          "type": "number",
+          "format": "float",
+          "description": "Start X position in mm."
+        },
+        "y1": {
+          "type": "number",
+          "format": "float",
+          "description": "Start Y position in mm."
+        },
+        "x2": {
+          "type": "number",
+          "format": "float",
+          "description": "End X position in mm."
+        },
+        "y2": {
+          "type": "number",
+          "format": "float",
+          "description": "End Y position in mm."
+        },
+        "z": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Z-order (higher = closer to front)."
+        },
+        "thickness": {
+          "type": "number",
+          "format": "float",
+          "description": "Line thickness in pt."
+        },
+        "color": {
+          "type": "string",
+          "description": "Line color (RGB hex without #, e.g. \"000000\")."
+        },
+        "style": {
+          "$ref": "#/$defs/LineStyle",
+          "description": "Line style."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Only consulted when\n`style == LineStyle::Dashed`; carriers always store a value to\nkeep the field non-optional and round-trip cleanly."
+        },
+        "start_arrow": {
+          "$ref": "#/$defs/ArrowShape",
+          "description": "Arrow head at the start point (`x1`, `y1`)."
+        },
+        "end_arrow": {
+          "$ref": "#/$defs/ArrowShape",
+          "description": "Arrow head at the end point (`x2`, `y2`)."
+        },
+        "start_arrow_size": {
+          "$ref": "#/$defs/ArrowSize",
+          "description": "Size of the start arrow head."
+        },
+        "end_arrow_size": {
+          "$ref": "#/$defs/ArrowSize",
+          "description": "Size of the end arrow head."
+        },
+        "cap": {
+          "$ref": "#/$defs/LineCap",
+          "description": "Stroke end-cap shape (plan_338).",
+          "default": "Butt"
+        }
+      },
+      "required": [
+        "id",
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+        "z",
+        "thickness",
+        "color",
+        "style",
+        "dash_pattern",
+        "start_arrow",
+        "end_arrow",
+        "start_arrow_size",
+        "end_arrow_size"
+      ],
+      "description": "A line (罫線) positioned on a page, defined by two endpoints."
+    },
+    "LineStyle": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Solid",
+            "Dashed",
+            "Wavy"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "Double",
+          "description": "Two parallel thin strokes with a fixed gap. Mirrors\n`StrokeStyle::Double` for shapes — both kinds resolve to the\nshared `paint_double_polyline` painter so a \"double line\"\nlooks the same on lines, curves, connectors, and shape\noutlines."
+        }
+      ],
+      "description": "Line style."
+    },
+    "ArrowShape": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "None",
+          "description": "No arrow head."
+        },
+        {
+          "type": "string",
+          "const": "FilledTriangle",
+          "description": "Filled triangle."
+        },
+        {
+          "type": "string",
+          "const": "OpenTriangle",
+          "description": "Outlined V-shaped triangle (two strokes, no fill)."
+        },
+        {
+          "type": "string",
+          "const": "Diamond",
+          "description": "Filled diamond / rhombus."
+        },
+        {
+          "type": "string",
+          "const": "Circle",
+          "description": "Filled circle."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Custom": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "Custom"
+          ],
+          "additionalProperties": false,
+          "description": "User-defined arrow shape (plan_202). The string is a `CustomArrow.id`\nlooked up in `Document::custom_arrows`."
+        }
+      ],
+      "description": "Shape of an arrow head drawn at the start / end of a line, curve, or\nconnector. Common across all three line-like object kinds so the\nproperty panel can drive them through a single dropdown surface.\n\n`Custom(id)` references a `CustomArrow` in the document-level library\n(plan_202). When the referenced id doesn't exist the renderer treats\nit as `None` (silent fallback). `Custom` carries a `SharedString` so\nthis enum is no longer `Copy`; clone where needed."
+    },
+    "ArrowSize": {
+      "type": "string",
+      "enum": [
+        "ExtraSmall",
+        "Small",
+        "Medium",
+        "Large",
+        "ExtraLarge"
+      ],
+      "description": "Size of an arrow head. Maps to a base length in points; the head's\nwidth is derived as 0.7 × length. Independent of the line's stroke\nthickness."
+    },
+    "LineCap": {
+      "type": "string",
+      "enum": [
+        "Butt",
+        "Round",
+        "Square"
+      ],
+      "description": "Stroke end-cap shape for line-like objects (plan_338). Mirrors\nODF `svg:stroke-linecap` / DrawingML `a:ln@cap` / SVG `stroke-linecap`."
+    },
+    "Curve": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7). Generate a fresh UUIDv7 for `add`; must match `object.id`."
+        },
+        "x0": {
+          "type": "number",
+          "format": "float",
+          "description": "Start point X in mm."
+        },
+        "y0": {
+          "type": "number",
+          "format": "float",
+          "description": "Start point Y in mm."
+        },
+        "cx1": {
+          "type": "number",
+          "format": "float",
+          "description": "First control point X in mm."
+        },
+        "cy1": {
+          "type": "number",
+          "format": "float",
+          "description": "First control point Y in mm."
+        },
+        "cx2": {
+          "type": "number",
+          "format": "float",
+          "description": "Second control point X in mm."
+        },
+        "cy2": {
+          "type": "number",
+          "format": "float",
+          "description": "Second control point Y in mm."
+        },
+        "x3": {
+          "type": "number",
+          "format": "float",
+          "description": "End point X in mm."
+        },
+        "y3": {
+          "type": "number",
+          "format": "float",
+          "description": "End point Y in mm."
+        },
+        "z": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Z-order (higher = closer to front)."
+        },
+        "stroke_color": {
+          "type": "string",
+          "description": "Stroke color as 6-digit hex (e.g. \"000000\")."
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float",
+          "description": "Stroke width in points."
+        },
+        "style": {
+          "$ref": "#/$defs/LineStyle",
+          "description": "Line style (solid, dashed, wavy)."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Only consulted when\n`style == LineStyle::Dashed`."
+        },
+        "start_arrow": {
+          "$ref": "#/$defs/ArrowShape",
+          "description": "Arrow head at the start point (`x0`, `y0`)."
+        },
+        "end_arrow": {
+          "$ref": "#/$defs/ArrowShape",
+          "description": "Arrow head at the end point (`x3`, `y3`)."
+        },
+        "start_arrow_size": {
+          "$ref": "#/$defs/ArrowSize",
+          "description": "Size of the start arrow head."
+        },
+        "end_arrow_size": {
+          "$ref": "#/$defs/ArrowSize",
+          "description": "Size of the end arrow head."
+        },
+        "cap": {
+          "$ref": "#/$defs/LineCap",
+          "description": "Stroke end-cap shape (plan_338).",
+          "default": "Butt"
+        },
+        "join": {
+          "$ref": "#/$defs/LineJoin",
+          "description": "Stroke corner-join shape (plan_338).",
+          "default": "Miter"
+        }
+      },
+      "required": [
+        "id",
+        "x0",
+        "y0",
+        "cx1",
+        "cy1",
+        "cx2",
+        "cy2",
+        "x3",
+        "y3",
+        "z",
+        "stroke_color",
+        "stroke_width",
+        "style",
+        "dash_pattern",
+        "start_arrow",
+        "end_arrow",
+        "start_arrow_size",
+        "end_arrow_size"
+      ],
+      "description": "A cubic Bezier curve positioned on a page, defined by four control points.\nCoordinates are absolute in mm (page-relative), like Line."
+    },
+    "LineJoin": {
+      "type": "string",
+      "enum": [
+        "Miter",
+        "Round",
+        "Bevel"
+      ],
+      "description": "Stroke corner-join shape for multi-segment line-like objects\n(plan_338). Mirrors ODF `draw:stroke-linejoin` / DrawingML\n`a:round`/`a:bevel`/`a:miter` / SVG `stroke-linejoin`."
+    },
+    "Connector": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7). Generate a fresh UUIDv7 for `add`; must match `object.id`."
+        },
+        "source_block_id": {
+          "type": "string",
+          "description": "Source block ID. Empty string means the source endpoint is not attached\nto any block; fall back to `source_x` / `source_y`."
+        },
+        "source_edge": {
+          "$ref": "#/$defs/ConnectorEdge",
+          "description": "Which edge of the source block."
+        },
+        "source_cxn_idx": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Index into the source shape's connection sites (`<cxnLst>`) when the\nendpoint snapped to a specific MS Office connection point. `None` =\nlegacy edge-midpoint behavior driven by `source_edge`. (plan_251)"
+        },
+        "source_x": {
+          "type": "number",
+          "format": "float",
+          "description": "Source position in mm (used when `source_block_id` is empty or the\nreferenced block is missing)."
+        },
+        "source_y": {
+          "type": "number",
+          "format": "float",
+          "description": "Source Y in mm (paired with `source_x`)."
+        },
+        "target_block_id": {
+          "type": "string",
+          "description": "Target block ID. Empty string means the target endpoint is not attached."
+        },
+        "target_edge": {
+          "$ref": "#/$defs/ConnectorEdge",
+          "description": "Which edge of the target block."
+        },
+        "target_cxn_idx": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Index into the target shape's connection sites (`<cxnLst>`). `None` =\nlegacy edge-midpoint behavior. (plan_251)"
+        },
+        "target_x": {
+          "type": "number",
+          "format": "float",
+          "description": "Target position in mm (used when `target_block_id` is empty or missing)."
+        },
+        "target_y": {
+          "type": "number",
+          "format": "float",
+          "description": "Target Y in mm (paired with `target_x`)."
+        },
+        "curve_offset": {
+          "type": "number",
+          "format": "float",
+          "description": "Curve offset for the bezier bulge (adjustable via drag). In mm.\nPerpendicular to the source→target line — positive values bulge to one side."
+        },
+        "curve_offset_along": {
+          "type": "number",
+          "format": "float",
+          "description": "Additional midpoint displacement along the source→target direction. In mm.\nAllows dragging the midpoint freely in 2D, not only perpendicular."
+        },
+        "z": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Z-order."
+        },
+        "color": {
+          "type": "string",
+          "description": "Line color (RGB hex)."
+        },
+        "thickness": {
+          "type": "number",
+          "format": "float",
+          "description": "Line thickness in pt."
+        },
+        "routing": {
+          "$ref": "#/$defs/ConnectorRouting",
+          "description": "Connector routing (path shape: curve, straight, orthogonal)."
+        },
+        "line_style": {
+          "$ref": "#/$defs/LineStyle",
+          "description": "Line style (solid, dashed, wavy)."
+        },
+        "dash_pattern": {
+          "$ref": "#/$defs/DashPattern",
+          "description": "Dash length / gap pattern (mm). Only consulted when\n`line_style == LineStyle::Dashed`."
+        },
+        "corner_radius": {
+          "type": "number",
+          "format": "float",
+          "description": "Corner radius in mm for orthogonal routing. 0 means sharp corners."
+        },
+        "waypoints": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number",
+                "format": "float"
+              },
+              {
+                "type": "number",
+                "format": "float"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "description": "Explicit corner waypoints for orthogonal routing, in page-absolute mm,\nordered source→target. The full vertex list is `[source] + waypoints +\n[target]`. When empty the path is derived from `curve_offset` /\n`curve_offset_along` (legacy / backward-compatible). When non-empty the\nuser manages corners explicitly; waypoints stay put (absolute) when an\nattached block moves — only the endpoint legs re-route."
+        },
+        "start_arrow": {
+          "$ref": "#/$defs/ArrowShape",
+          "description": "Arrow head at the source endpoint."
+        },
+        "end_arrow": {
+          "$ref": "#/$defs/ArrowShape",
+          "description": "Arrow head at the target endpoint."
+        },
+        "start_arrow_size": {
+          "$ref": "#/$defs/ArrowSize",
+          "description": "Size of the source arrow head."
+        },
+        "end_arrow_size": {
+          "$ref": "#/$defs/ArrowSize",
+          "description": "Size of the target arrow head."
+        },
+        "cap": {
+          "$ref": "#/$defs/LineCap",
+          "description": "Stroke end-cap shape (plan_338).",
+          "default": "Butt"
+        },
+        "join": {
+          "$ref": "#/$defs/LineJoin",
+          "description": "Stroke corner-join shape (plan_338).",
+          "default": "Miter"
+        }
+      },
+      "required": [
+        "id",
+        "source_block_id",
+        "source_edge",
+        "source_x",
+        "source_y",
+        "target_block_id",
+        "target_edge",
+        "target_x",
+        "target_y",
+        "curve_offset",
+        "curve_offset_along",
+        "z",
+        "color",
+        "thickness",
+        "routing",
+        "line_style",
+        "dash_pattern",
+        "corner_radius",
+        "waypoints",
+        "start_arrow",
+        "end_arrow",
+        "start_arrow_size",
+        "end_arrow_size"
+      ],
+      "description": "A connector curve that links two blocks via their edge centers."
+    },
+    "ConnectorEdge": {
+      "type": "string",
+      "enum": [
+        "Top",
+        "Bottom",
+        "Left",
+        "Right"
+      ],
+      "description": "Which edge of a block a connector attaches to."
+    },
+    "ConnectorRouting": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "Curve",
+          "description": "Bezier curve (default)."
+        },
+        {
+          "type": "string",
+          "const": "Straight",
+          "description": "Straight line."
+        },
+        {
+          "type": "string",
+          "const": "Orthogonal",
+          "description": "Orthogonal (right-angle) line."
+        }
+      ],
+      "description": "Connector line style."
+    },
+    "CompoundShapeInstance": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7). Generate a fresh UUIDv7 for `add`; must match `object.id`."
+        },
+        "template_id": {
+          "type": "string",
+          "description": "ID of the CompoundShapeTemplate this instance refers to."
+        },
+        "x": {
+          "type": "number",
+          "format": "float",
+          "description": "Anchor position in mm (the template's origin is placed here)."
+        },
+        "y": {
+          "type": "number",
+          "format": "float",
+          "description": "Anchor Y in mm."
+        },
+        "z": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Z-order (higher = closer to front)."
+        },
+        "scale_x": {
+          "type": "number",
+          "format": "float",
+          "description": "Per-axis scale factor applied to the template's relative coordinates.\n`1.0` means render the template at its original size."
+        },
+        "scale_y": {
+          "type": "number",
+          "format": "float",
+          "description": "Vertical scale factor (see `scale_x`)."
+        },
+        "rotation": {
+          "type": "number",
+          "format": "float",
+          "description": "Clockwise rotation in degrees (0.0..360.0) applied around the instance's\nvisible bounding-box center. Default `0.0` = no rotation."
+        },
+        "flip_h": {
+          "type": "boolean",
+          "description": "Horizontal mirror around the visible bounding-box center, applied\nbefore `rotation` (plan_338; ODF `draw:mirror-horizontal` /\nDrawingML `a:xfrm@flipH` と同順序).",
+          "default": false
+        },
+        "flip_v": {
+          "type": "boolean",
+          "description": "Vertical mirror around the visible bounding-box center, applied\nbefore `rotation` (plan_338).",
+          "default": false
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShapeShadow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Drop shadow (plan_339). `None` = no shadow.",
+          "default": null
+        },
+        "fill_color_override": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Optional per-instance fill color override (RGB hex without `#`).\n`None` means use the template's default fill color."
+        },
+        "fill_gradient_override": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gradient"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional per-instance gradient override, taking precedence over\n`fill_color_override` and the template's fill (plan_300). When\n`Some`, `fill_color_override` holds [`Gradient::base_hex`].",
+          "default": null
+        },
+        "stroke_color_override": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Optional per-instance stroke color override. `None` means use the\ntemplate's per-segment color."
+        },
+        "stroke_width_override": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "description": "Optional per-instance stroke width override (pt). `None` means use\nthe template's per-segment thickness."
+        },
+        "stroke_visible": {
+          "type": "boolean",
+          "description": "Whether the shape's outline (segments) is drawn. Default `true`."
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShapeLabel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional embedded text label rendered inside the shape's visible\nbbox. Replaces the legacy \"Block bound to CompoundShape via\n`bound_compound_shape_id`\" pattern."
+        }
+      },
+      "required": [
+        "id",
+        "template_id",
+        "x",
+        "y",
+        "z",
+        "scale_x",
+        "scale_y",
+        "rotation",
+        "stroke_visible"
+      ],
+      "description": "An instance of a CompoundShapeTemplate placed on a page."
+    },
+    "Group": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7). Generate a fresh UUIDv7 for `add`; must match `object.id`."
+        },
+        "block_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Member IDs per object type. All members must live on the same page as\nthe group. `add` with `parent_id` appends to the right list automatically."
+        },
+        "line_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "curve_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "connector_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "compound_shape_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "CompoundShape (object template) instances that belong to this group."
+        }
+      },
+      "required": [
+        "id",
+        "block_ids",
+        "line_ids",
+        "curve_ids",
+        "connector_ids",
+        "compound_shape_ids"
+      ],
+      "description": "A group of objects that move and resize together."
+    },
+    "Section": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7), consistent with every other document object."
+        },
+        "template_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Name of the `Template` (in `Document.templates`) applied to every page\nof this section. `null` = no template."
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional human-readable title for the section. Displayed in the\nproperty panel and persisted to XML so authors can label e.g.\n\"Cover\", \"Chapter 1\", etc."
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "description": "A section optionally references a named template and owns a range of pages.\nPages are stored flat in Document; section_page_counts tracks how many pages each section owns.\n`template_name == None` means \"no template applied\" — header/footer collapse to 0\nand the page content area covers the full paper.\n\n`Default` is deliberately **not** derived: it would mint a section with an\nempty `id`, and duplicate empty ids break the id's uniqueness guarantee.\nConstruct through [`Section::new`] so the id is always assigned."
+    },
+    "Page": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id (UUIDv7), consistent with every other document object."
+        },
+        "page_no": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0,
+          "description": "1-based page number. Derived from the position in `pages`; the API\nignores incoming values and recomputes it (send 0)."
+        },
+        "paper_size": {
+          "$ref": "#/$defs/PaperSize",
+          "description": "Named paper size. `width` / `height` are the authoritative dimensions."
+        },
+        "width": {
+          "type": "number",
+          "format": "float",
+          "description": "Width in mm."
+        },
+        "height": {
+          "type": "number",
+          "format": "float",
+          "description": "Height in mm."
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Line"
+          },
+          "description": "Lines (罫線) on this page."
+        },
+        "curves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Curve"
+          },
+          "description": "Curves (曲線) on this page."
+        },
+        "connectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Connector"
+          },
+          "description": "Connectors (コネクタ曲線) on this page."
+        },
+        "compound_shapes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompoundShapeInstance"
+          },
+          "description": "Compound shape instances on this page (each refs a Document-level template)."
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Group"
+          },
+          "description": "Groups of objects on this page."
+        }
+      },
+      "required": [
+        "id",
+        "page_no",
+        "paper_size",
+        "width",
+        "height",
+        "blocks",
+        "lines",
+        "curves",
+        "connectors",
+        "compound_shapes",
+        "groups"
+      ],
+      "description": "A page in the document."
+    },
+    "PaperSize": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "A4Portrait",
+          "description": "A4 Portrait (210 × 297 mm)"
+        },
+        {
+          "type": "string",
+          "const": "A4Landscape",
+          "description": "A4 Landscape (297 × 210 mm)"
+        },
+        {
+          "type": "string",
+          "const": "A3Portrait",
+          "description": "A3 Portrait (297 × 420 mm)"
+        },
+        {
+          "type": "string",
+          "const": "A3Landscape",
+          "description": "A3 Landscape (420 × 297 mm)"
+        },
+        {
+          "type": "string",
+          "const": "LetterPortrait",
+          "description": "US Letter Portrait (216 × 279 mm)"
+        },
+        {
+          "type": "string",
+          "const": "LetterLandscape",
+          "description": "US Letter Landscape (279 × 216 mm)"
+        },
+        {
+          "type": "string",
+          "const": "LegalPortrait",
+          "description": "US Legal Portrait (216 × 356 mm)"
+        },
+        {
+          "type": "string",
+          "const": "LegalLandscape",
+          "description": "US Legal Landscape (356 × 216 mm)"
+        },
+        {
+          "type": "string",
+          "const": "TabloidPortrait",
+          "description": "Tabloid / Ledger Portrait (279 × 432 mm)"
+        },
+        {
+          "type": "string",
+          "const": "TabloidLandscape",
+          "description": "Tabloid / Ledger Landscape (432 × 279 mm)"
+        },
+        {
+          "type": "string",
+          "const": "FoolscapPortrait",
+          "description": "Foolscap Portrait (203 × 330 mm)"
+        },
+        {
+          "type": "string",
+          "const": "FoolscapLandscape",
+          "description": "Foolscap Landscape (330 × 203 mm)"
+        },
+        {
+          "type": "string",
+          "const": "P4Portrait",
+          "description": "P4 Portrait (215 × 280 mm)"
+        },
+        {
+          "type": "string",
+          "const": "P4Landscape",
+          "description": "P4 Landscape (280 × 215 mm)"
+        },
+        {
+          "type": "string",
+          "const": "OficioPortrait",
+          "description": "Oficio (Carta) Portrait (216 × 340 mm)"
+        },
+        {
+          "type": "string",
+          "const": "OficioLandscape",
+          "description": "Oficio (Carta) Landscape (340 × 216 mm)"
+        }
+      ],
+      "description": "Paper size presets."
+    },
+    "CompoundShapeTemplate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name shown in the sidebar / property panel. Empty by\ndefault (UI then falls back to `Shape <short-id>`)."
+        },
+        "fill_color": {
+          "type": "string",
+          "description": "Fill color (RGB hex without `#`) shared by every region in\n`fill_regions`. Use the literal `\"NONE\"` to disable filling."
+        },
+        "fill_gradient": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gradient"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional gradient fill for the template, taking precedence over\n`fill_color` (plan_300). When `Some`, `fill_color` holds\n[`Gradient::base_hex`] as the solid fallback.",
+          "default": null
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TemplateSegment"
+          },
+          "description": "All segments that make up the visible strokes. plan_187 collapsed\nthe previous \"closed-chain outline\" semantics into a flat stroke\nlist; the fill is now driven exclusively by `fill_regions`."
+        },
+        "decorative_segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TemplateSegment"
+          },
+          "description": "Held over from plan_184/186 for backward compatibility with stored\nXML — also rendered as stroke. New templates created in-app keep\nthis empty."
+        },
+        "fill_regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TemplateFillRegion"
+          },
+          "description": "Polygons that should be filled with `fill_color`. Empty = no fill\n(the template appears as line-art only). Each region is added /\nremoved independently from the edit dialog's paint-bucket UI."
+        },
+        "text_rect": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "prefixItems": [
+            {
+              "type": "number",
+              "format": "float"
+            },
+            {
+              "type": "number",
+              "format": "float"
+            },
+            {
+              "type": "number",
+              "format": "float"
+            },
+            {
+              "type": "number",
+              "format": "float"
+            }
+          ],
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Optional text-placement rectangle `(l, t, r, b)` in template-local mm\n(plan_246). Captured from a preset shape's `<rect>` definition; used to\nposition the instance label when the body box differs from the\npainted visible bbox (e.g. callouts whose tail extends past the body).\n`None` = use the visible bbox (default for hand-built templates)."
+        },
+        "connection_sites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConnectionSite"
+          },
+          "description": "DrawingML connection sites (`<cxnLst>`) in template-local mm — the\nMS Office connector snap points evaluated from the preset's geometry.\nEmpty = no preset sites (connectors fall back to outline/bbox edge\nmidpoints). (plan_251)"
+        },
+        "preset_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Original DrawingML preset id (ST_ShapeType, e.g. \"roundRect\") when this\ntemplate was imported from a `<a:prstGeom>` shape. `None` for hand-built\nor custGeom-derived templates. Preserving the \"identity\" lets export\nemit `<a:prstGeom>` (with adjust handles) instead of baked custGeom, so\nOffice round-trips keep the live preset. Cleared when the template's\ngeometry is structurally edited in-app. (plan_252)"
+        },
+        "preset_adjusts": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "description": "Preset adjust values (`<a:avLst>`) as `(name, \"val N\")`, paired with\n`preset_id`. Empty = preset defaults. (plan_252)"
+        },
+        "listed": {
+          "type": "boolean",
+          "description": "Whether the template appears in the sidebar's ObjectTemplate list.\n`false` for templates created internally as the backing geometry of a\nmerged shape (線の結合, plan_261) — the instance on the page is the\nuser-visible object, so the template itself stays out of the panel."
+        },
+        "odf_native": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OdfNativeGeom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "ODF (LibreOffice) 取込時の図形 identity (plan_351)。`Some` のとき\nODF 書き出しは焼き込みパスではなく LO ネイティブ定義で復元する。\n`preset_id` と同じく、ジオメトリを構造編集したら破棄する。",
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "fill_color",
+        "segments",
+        "decorative_segments",
+        "fill_regions",
+        "connection_sites",
+        "preset_adjusts",
+        "listed"
+      ],
+      "description": "Document-level reusable shape template. Geometry is stored in\ntemplate-local relative coordinates so the template can be instantiated at\nany position on any page."
+    },
+    "TemplateSegment": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Line": {
+              "type": "object",
+              "properties": {
+                "x1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "x2": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y2": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "thickness": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "color": {
+                  "type": "string"
+                },
+                "style": {
+                  "$ref": "#/$defs/LineStyle"
+                },
+                "dash_pattern": {
+                  "$ref": "#/$defs/DashPattern"
+                },
+                "origin": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TemplateBlockOrigin"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "x1",
+                "y1",
+                "x2",
+                "y2",
+                "thickness",
+                "color",
+                "style",
+                "dash_pattern"
+              ]
+            }
+          },
+          "required": [
+            "Line"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Curve": {
+              "type": "object",
+              "properties": {
+                "x0": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y0": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cx1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cy1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cx2": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cy2": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "x3": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y3": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "thickness": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "color": {
+                  "type": "string"
+                },
+                "style": {
+                  "$ref": "#/$defs/LineStyle"
+                },
+                "dash_pattern": {
+                  "$ref": "#/$defs/DashPattern"
+                },
+                "origin": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TemplateBlockOrigin"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "x0",
+                "y0",
+                "cx1",
+                "cy1",
+                "cx2",
+                "cy2",
+                "x3",
+                "y3",
+                "thickness",
+                "color",
+                "style",
+                "dash_pattern"
+              ]
+            }
+          },
+          "required": [
+            "Curve"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "One segment of a CompoundShapeTemplate. Holds geometry in template-local\ncoordinates (origin = template bbox top-left) along with stroke information."
+    },
+    "TemplateBlockOrigin": {
+      "type": "object",
+      "properties": {
+        "block_key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/TemplateBlockKind"
+        },
+        "corner_radius": {
+          "type": "number",
+          "format": "float",
+          "description": "Source shape's corner radius (mm) captured at compound-shape\ncreation time so the revert flow can restore rounded corners.\n`0.0` for sharp shapes and for legacy templates that predate this\nfield."
+        }
+      },
+      "required": [
+        "block_key",
+        "kind",
+        "corner_radius"
+      ],
+      "description": "Per-edge marker recording which Block in the original selection a\n`TemplateSegment` came from. `block_key` is unique within the template\n(the original block id at the time of compound-shape creation) — its\nvalue has no semantic meaning, it just groups edges of the same block\nwhen reverting."
+    },
+    "TemplateBlockKind": {
+      "type": "string",
+      "enum": [
+        "Rect",
+        "Circle",
+        "Triangle",
+        "Diamond"
+      ],
+      "description": "Kind of shape Block a TemplateSegment was carved out of. Used during\n\"revert object template\" to re-assemble the original Block instead of\nleaving the perimeter as standalone Lines / Curves. `None` on the\nsegment's `origin` means the segment was a free Line/Curve to begin with."
+    },
+    "TemplateFillRegion": {
+      "type": "object",
+      "properties": {
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number",
+                "format": "float"
+              },
+              {
+                "type": "number",
+                "format": "float"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "holes": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "format": "float"
+                },
+                {
+                  "type": "number",
+                  "format": "float"
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Per-region fill color (RGB hex without `#`). `None` = use the\ntemplate's `fill_color` (legacy single-color behavior). 編集\nダイアログでの領域ごとの明示的な塗り分けに使う(plan_243)。"
+        },
+        "lum": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "prefixItems": [
+            {
+              "type": "number",
+              "format": "float"
+            },
+            {
+              "type": "number",
+              "format": "float"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Per-region luminance modulation `(mod, off)` applied to the\n*resolved* base fill color at paint time: `L' = L×mod + off`\n(HSL の L 成分)。Office の bevel のような「基本色 + 面ごとの\n明暗」を相対指定のまま保持するためのもので、基本色を変えると\n全面が濃淡付きで追従する(plan_244)。`color`(絶対色)が\nある場合はそちらが優先。"
+        }
+      },
+      "required": [
+        "points",
+        "holes"
+      ],
+      "description": "One filled region (closed polygon, template-local mm) of a\nCompoundShapeTemplate. plan_187 replaced the legacy \"fill follows the\nsegments polyline\" model with this explicit list of paint-bucket\nregions: users click each enclosed area they want filled and the\ndialog records the contour here.\n\n`points` is the outer-boundary polygon; the last point is implicitly\nconnected back to the first. `holes` lists inner cut-out polygons —\neach is a closed ring inside `points` whose interior is *excluded*\nfrom the fill. Empty `holes` keeps the legacy single-ring behavior."
+    },
+    "ConnectionSite": {
+      "type": "object",
+      "properties": {
+        "x_mm": {
+          "type": "number",
+          "format": "float"
+        },
+        "y_mm": {
+          "type": "number",
+          "format": "float"
+        },
+        "ang_deg": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "x_mm",
+        "y_mm",
+        "ang_deg"
+      ],
+      "description": "A DrawingML connection site (`<cxnLst><cxn ang=\"...\">`) — an MS Office\nconnector snap point. Position is in template-local mm (origin = top-left);\n`ang_deg` is the direction (degrees, clockwise) a connector leaves the point,\nused to derive the elbow exit edge. (plan_251)"
+    },
+    "OdfNativeGeom": {
+      "type": "object",
+      "properties": {
+        "draw_type": {
+          "type": "string",
+          "description": "LO ネイティブの `draw:type`。`ooxml-*` / `non-primitive` /\n`mso-spt*` は入れない(LO がそれらを定義へ解決しないため。実測)。"
+        },
+        "modifiers": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "`draw:modifiers` の実値(viewBox 0..21600 空間)。そのまま書き戻す。"
+        },
+        "box_rect": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "format": "float"
+            },
+            {
+              "type": "number",
+              "format": "float"
+            },
+            {
+              "type": "number",
+              "format": "float"
+            },
+            {
+              "type": "number",
+              "format": "float"
+            }
+          ],
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "元の `svg:x/y/width/height` の箱を**テンプレートローカル mm** で\n表した `(l, t, r, b)`。吹き出しの尻尾は箱の外へ出るため可視 bbox とは\n一致しない。ネイティブ復元では LO が期待する「本体の箱」を書く必要が\nあるので、plan_348 の 0 基準正規化のシフト込みで保持する。"
+        }
+      },
+      "required": [
+        "draw_type",
+        "modifiers",
+        "box_rect"
+      ],
+      "description": "ODF (LibreOffice) 取込時の図形 identity (plan_351)。\n\nLO ネイティブな `draw:type` を持つ custom-shape は、見た目を優先して\nenhanced-path を評価した [`CompoundShapeTemplate`] として取り込む\n(形状近似ゲートを通らない調整済み図形など)。そのままだと書き出しが\n`draw:type=\"non-primitive\"` になり、LO 側で図形の正体と調整ハンドルを\n失うため、元の型・調整値・箱を保持して書き戻しで復元する。\n\n[`CompoundShapeTemplate::preset_id`] (DrawingML identity, plan_252) と\n対になる ODF 版。ジオメトリを構造編集したら破棄するのも同じ規約。"
+    },
+    "CustomArrow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArrowPart"
+          },
+          "description": "Parts in draw order (index 0 painted first, so subsequent parts\noverlap earlier ones)."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "parts"
+      ],
+      "description": "A user-defined arrow head, made of one or more [`ArrowPart`]s. Stored\nin [`Document::custom_arrows`] and referenced from\n[`ArrowShape::Custom`]."
+    },
+    "ArrowPart": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Line": {
+              "type": "object",
+              "properties": {
+                "x1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "x2": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y2": {
+                  "type": "number",
+                  "format": "float"
+                }
+              },
+              "required": [
+                "x1",
+                "y1",
+                "x2",
+                "y2"
+              ]
+            }
+          },
+          "required": [
+            "Line"
+          ],
+          "additionalProperties": false,
+          "description": "Straight line segment (stroke only, no fill)."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Circle": {
+              "type": "object",
+              "properties": {
+                "cx": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cy": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "r": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "fill": {
+                  "$ref": "#/$defs/ArrowFill"
+                }
+              },
+              "required": [
+                "cx",
+                "cy",
+                "r",
+                "fill"
+              ]
+            }
+          },
+          "required": [
+            "Circle"
+          ],
+          "additionalProperties": false,
+          "description": "Circle. Stroked with the line color; fill controlled by [`ArrowFill`]."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Polygon": {
+              "type": "object",
+              "properties": {
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "format": "float"
+                      },
+                      {
+                        "type": "number",
+                        "format": "float"
+                      }
+                    ],
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "fill": {
+                  "$ref": "#/$defs/ArrowFill"
+                }
+              },
+              "required": [
+                "points",
+                "fill"
+              ]
+            }
+          },
+          "required": [
+            "Polygon"
+          ],
+          "additionalProperties": false,
+          "description": "Closed polygon (last point implicitly joins to the first)."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Curve": {
+              "type": "object",
+              "properties": {
+                "x0": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y0": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cx1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cy1": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cx2": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "cy2": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "x3": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "y3": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "fill": {
+                  "$ref": "#/$defs/ArrowFill"
+                }
+              },
+              "required": [
+                "x0",
+                "y0",
+                "cx1",
+                "cy1",
+                "cx2",
+                "cy2",
+                "x3",
+                "y3",
+                "fill"
+              ]
+            }
+          },
+          "required": [
+            "Curve"
+          ],
+          "additionalProperties": false,
+          "description": "Cubic Bézier curve. When `fill != None`, start and end are\nconnected by a straight line to close the region for filling."
+        }
+      ],
+      "description": "One geometric primitive inside a [`CustomArrow`]. Coordinates are in\nthe arrow-local frame: the line endpoint sits at `(0, 0)` and the\nline extends along `+X`."
+    },
+    "ArrowFill": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "Inherit",
+          "description": "Fill with the line color (= stroke color)."
+        },
+        {
+          "type": "string",
+          "const": "White",
+          "description": "Pure white fill (used for hollow/whiteout shapes)."
+        },
+        {
+          "type": "string",
+          "const": "None",
+          "description": "No fill (stroke only)."
+        }
+      ],
+      "description": "Fill rule for shape parts inside a [`CustomArrow`]. Stroke is always\ninherited from the line color so only fill needs an enum."
+    },
+    "ViewState": {
+      "type": "object",
+      "properties": {
+        "zoom": {
+          "type": "number",
+          "format": "float",
+          "description": "Zoom level (clamped to 0.3–5.0 on restore)."
+        },
+        "active_page_index": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0,
+          "description": "0-based index of the page that was at the viewport top."
+        }
+      },
+      "required": [
+        "zoom",
+        "active_page_index"
+      ],
+      "description": "Persisted view state: the minimal \"where the file was open\" snapshot\n(plan_204). Stored under `<document>/<view-state>` so reopening a file\nrestores its zoom and the page the user was looking at. `None` on the\nlive document means \"no saved state\" (legacy files / never saved)."
+    }
+  },
+  "$id": "https://hogandoc.dev/schema/collab-v1/document.schema.json"
+}

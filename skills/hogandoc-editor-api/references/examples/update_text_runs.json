@@ -1,0 +1,16 @@
+{
+  "kind": "update",
+  "object": { "type": "block", "id": "0199a000-0000-7000-8000-000000000001" },
+  "patch": {
+    "content": {
+      "Text": [
+        {
+          "font_size": 21.333,
+          "bold": true, "italic": false, "underline": false, "strikethrough": false,
+          "font_color": "1F3A93",
+          "content": { "Text": "御請求書" }
+        }
+      ]
+    }
+  }
+}

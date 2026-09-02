@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "input_id": {
+      "type": "string"
+    },
+    "input_type": {
+      "type": "string"
+    },
+    "value": {
+      "type": "string"
+    },
+    "block_id": {
+      "type": "string"
+    },
+    "page_id": {
+      "type": "string"
+    },
+    "nullable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "input_id",
+    "input_type",
+    "value",
+    "block_id",
+    "page_id",
+    "nullable"
+  ],
+  "title": "GET /api/v1/docs/{doc_id}/inputs item",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hogandoc.dev/schema/collab-v1/input_info.schema.json",
+  "description": "入力フィールド一覧の 1 要素（docs/16 §12）。"
+}

@@ -1,0 +1,24 @@
+{
+  "kind": "add",
+  "object": { "type": "block", "id": "0199a000-0000-7000-8000-000000000001" },
+  "page_id": "0199a000-0000-7000-8000-0000000000aa",
+  "value": {
+    "id": "0199a000-0000-7000-8000-000000000001",
+    "x": 20, "y": 30, "z": 0, "width": 120, "height": 12,
+    "word_wrap": true,
+    "text_align": "Left",
+    "vertical_align": "Top",
+    "content": {
+      "Text": [
+        {
+          "font_size": 16,
+          "bold": false, "italic": false, "underline": false, "strikethrough": false,
+          "content": { "Text": "御見積書" }
+        }
+      ]
+    },
+    "border_visible": false,
+    "corner_radius": 0,
+    "rotation": 0
+  }
+}

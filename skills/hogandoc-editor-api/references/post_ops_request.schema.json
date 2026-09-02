@@ -1,0 +1,229 @@
+{
+  "type": "object",
+  "properties": {
+    "client_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "省略するとリクエストごとに匿名 ID が振られる（冪等性なし）。"
+    },
+    "client_seq": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0,
+      "description": "クライアント側の連番。省略時 1。応答の `ack` にそのまま返る。",
+      "default": 1
+    },
+    "ops": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Op"
+      },
+      "description": "適用する Op の列。空は `400`。全件が 1 バッチとして原子的に適用される。"
+    }
+  },
+  "required": [
+    "ops"
+  ],
+  "description": "REST で Op を投入するときのボディ。応答は WS の `ack` と同形 `{ client_seq, server_seq, warnings }`、拒否は `422` で `reject` と同形。\n\n`POST /api/v1/docs/{doc_id}/ops` の要求ボディ。docs/16 §3。\nWS を使えないクライアント（curl / スクリプト / LLM）向け。",
+  "title": "POST /api/v1/docs/{doc_id}/ops request body",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Op": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "page_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "所属先。ページ配下の種別では必須: `Page.id`、`\"document\"`\n（ドキュメント直下）、`\"template:{name}/{header|content|footer}\"`。"
+            },
+            "parent_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "グループに入れる場合、その `Group.id`。"
+            },
+            "value": {
+              "description": "追加するオブジェクト全体の JSON。形は `object.type` で決まる\n（`block` → `Block`、`line` → `Line`、`curve` → `Curve`、\n`connector` → `Connector`、`compound_shape` → `CompoundShapeInstance`、\n`group` → `Group`、`page` → `Page`、`section` → `Section`、\n`template` → `Template`、`compound_shape_template` →\n`CompoundShapeTemplate`、`custom_arrow` → `CustomArrow`。\nいずれも `document` schema の `$defs` にある）。`id` は\n`object.id` と一致させる。"
+            },
+            "index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint",
+              "minimum": 0,
+              "description": "配列内の挿入位置（省略で末尾）。"
+            },
+            "kind": {
+              "type": "string",
+              "const": "add"
+            }
+          },
+          "required": [
+            "kind",
+            "object",
+            "value"
+          ],
+          "description": "オブジェクトを 1 つ追加する。同じ `id` が既にあれば拒否。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "patch": {
+              "description": "変更するフィールドだけを含む部分オブジェクト。`null` でフィールド\n削除。配列は丸ごと置換。形は `add.value` と同じ型の部分集合。"
+            },
+            "kind": {
+              "type": "string",
+              "const": "update"
+            }
+          },
+          "required": [
+            "kind",
+            "object",
+            "patch"
+          ],
+          "description": "既存オブジェクトに JSON Merge Patch (RFC 7396) を当てる。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "remove"
+            }
+          },
+          "required": [
+            "kind",
+            "object"
+          ],
+          "description": "オブジェクトを削除する。グループのメンバー一覧からも外れる。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "to_page_id": {
+              "type": "string",
+              "description": "移動先。`add.page_id` と同じ書式。"
+            },
+            "index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "move"
+            }
+          },
+          "required": [
+            "kind",
+            "object",
+            "to_page_id"
+          ],
+          "description": "ページ配下オブジェクトを別のページ / 領域へ移す。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_id": {
+              "type": "string"
+            },
+            "object_type": {
+              "$ref": "#/$defs/ObjectType"
+            },
+            "order": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "その配列にある全 ID を新しい順序で並べたもの。"
+            },
+            "kind": {
+              "type": "string",
+              "const": "reorder"
+            }
+          },
+          "required": [
+            "kind",
+            "page_id",
+            "object_type",
+            "order"
+          ],
+          "description": "同一ページ・同一種別の配列順（= Z オーダー）を並べ替える。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "document": true,
+            "kind": {
+              "type": "string",
+              "const": "replace_document"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "description": "文書全体を置き換える。`document` schema に従う JSON。"
+        }
+      ],
+      "description": "1 つの変更。docs/16 §7。"
+    },
+    "ObjectRef": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ObjectType"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "description": "`{ \"type\": ..., \"id\": ... }`"
+    },
+    "ObjectType": {
+      "type": "string",
+      "enum": [
+        "block",
+        "line",
+        "curve",
+        "connector",
+        "compound_shape",
+        "group",
+        "page",
+        "section",
+        "template",
+        "compound_shape_template",
+        "custom_arrow"
+      ],
+      "description": "対象オブジェクトの種別。docs/16 §7 の `ObjectType`。"
+    }
+  },
+  "$id": "https://hogandoc.dev/schema/collab-v1/post_ops_request.schema.json"
+}

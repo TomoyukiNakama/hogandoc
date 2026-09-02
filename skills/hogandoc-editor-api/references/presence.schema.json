@@ -1,0 +1,75 @@
+{
+  "type": "object",
+  "properties": {
+    "client_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "default": ""
+    },
+    "color": {
+      "type": "string",
+      "default": ""
+    },
+    "page_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "selection": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "editing_block": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Cursor"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "description": "参加者の選択・カーソル位置（docs/16 §11）。\n\nプレゼンス。docs/16 §11。",
+  "title": "collab/v1 presence",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Cursor": {
+      "type": "object",
+      "properties": {
+        "page_id": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number",
+          "format": "float"
+        },
+        "y": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "page_id",
+        "x",
+        "y"
+      ]
+    }
+  },
+  "$id": "https://hogandoc.dev/schema/collab-v1/presence.schema.json"
+}

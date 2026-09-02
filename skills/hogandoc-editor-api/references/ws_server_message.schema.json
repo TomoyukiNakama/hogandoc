@@ -1,0 +1,580 @@
+{
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "server_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "doc_version": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "snapshot": true,
+        "ops": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Broadcast"
+          }
+        },
+        "presence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Presence"
+          },
+          "default": []
+        },
+        "type": {
+          "type": "string",
+          "const": "welcome"
+        }
+      },
+      "required": [
+        "type",
+        "client_id",
+        "server_seq",
+        "doc_version"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "hello_reject"
+        }
+      },
+      "required": [
+        "type",
+        "code",
+        "message"
+      ]
+    },
+    {
+      "$ref": "#/$defs/Broadcast",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "ops"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "client_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "server_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Warning"
+          }
+        },
+        "type": {
+          "type": "string",
+          "const": "ack"
+        }
+      },
+      "required": [
+        "type",
+        "client_seq",
+        "server_seq"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "client_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "op_index": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "reject"
+        }
+      },
+      "required": [
+        "type",
+        "client_seq",
+        "op_index",
+        "code",
+        "message"
+      ]
+    },
+    {
+      "$ref": "#/$defs/Presence",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "presence"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "$ref": "#/$defs/PeerInfo",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "peer_joined"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "peer_left"
+        }
+      },
+      "required": [
+        "type",
+        "client_id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "server_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "document": true,
+        "type": {
+          "type": "string",
+          "const": "snapshot"
+        }
+      },
+      "required": [
+        "type",
+        "server_seq",
+        "document"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "error"
+        }
+      },
+      "required": [
+        "type",
+        "code",
+        "message"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "pong"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    }
+  ],
+  "description": "`type` で判別する（docs/16 §6.2）。\n\nオーソリティ → クライアント。",
+  "title": "collab/v1 WebSocket authority → client message",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Broadcast": {
+      "type": "object",
+      "properties": {
+        "server_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "client_id": {
+          "type": "string"
+        },
+        "client_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Op"
+          }
+        }
+      },
+      "required": [
+        "server_seq",
+        "client_id",
+        "client_seq",
+        "ops"
+      ],
+      "description": "オーソリティが配信する 1 バッチ。`ops` メッセージおよび `welcome.ops`。"
+    },
+    "Op": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "page_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "所属先。ページ配下の種別では必須: `Page.id`、`\"document\"`\n（ドキュメント直下）、`\"template:{name}/{header|content|footer}\"`。"
+            },
+            "parent_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "グループに入れる場合、その `Group.id`。"
+            },
+            "value": {
+              "description": "追加するオブジェクト全体の JSON。形は `object.type` で決まる\n（`block` → `Block`、`line` → `Line`、`curve` → `Curve`、\n`connector` → `Connector`、`compound_shape` → `CompoundShapeInstance`、\n`group` → `Group`、`page` → `Page`、`section` → `Section`、\n`template` → `Template`、`compound_shape_template` →\n`CompoundShapeTemplate`、`custom_arrow` → `CustomArrow`。\nいずれも `document` schema の `$defs` にある）。`id` は\n`object.id` と一致させる。"
+            },
+            "index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint",
+              "minimum": 0,
+              "description": "配列内の挿入位置（省略で末尾）。"
+            },
+            "kind": {
+              "type": "string",
+              "const": "add"
+            }
+          },
+          "required": [
+            "kind",
+            "object",
+            "value"
+          ],
+          "description": "オブジェクトを 1 つ追加する。同じ `id` が既にあれば拒否。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "patch": {
+              "description": "変更するフィールドだけを含む部分オブジェクト。`null` でフィールド\n削除。配列は丸ごと置換。形は `add.value` と同じ型の部分集合。"
+            },
+            "kind": {
+              "type": "string",
+              "const": "update"
+            }
+          },
+          "required": [
+            "kind",
+            "object",
+            "patch"
+          ],
+          "description": "既存オブジェクトに JSON Merge Patch (RFC 7396) を当てる。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "remove"
+            }
+          },
+          "required": [
+            "kind",
+            "object"
+          ],
+          "description": "オブジェクトを削除する。グループのメンバー一覧からも外れる。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "object": {
+              "$ref": "#/$defs/ObjectRef"
+            },
+            "to_page_id": {
+              "type": "string",
+              "description": "移動先。`add.page_id` と同じ書式。"
+            },
+            "index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "move"
+            }
+          },
+          "required": [
+            "kind",
+            "object",
+            "to_page_id"
+          ],
+          "description": "ページ配下オブジェクトを別のページ / 領域へ移す。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "page_id": {
+              "type": "string"
+            },
+            "object_type": {
+              "$ref": "#/$defs/ObjectType"
+            },
+            "order": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "その配列にある全 ID を新しい順序で並べたもの。"
+            },
+            "kind": {
+              "type": "string",
+              "const": "reorder"
+            }
+          },
+          "required": [
+            "kind",
+            "page_id",
+            "object_type",
+            "order"
+          ],
+          "description": "同一ページ・同一種別の配列順（= Z オーダー）を並べ替える。"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "document": true,
+            "kind": {
+              "type": "string",
+              "const": "replace_document"
+            }
+          },
+          "required": [
+            "kind",
+            "document"
+          ],
+          "description": "文書全体を置き換える。`document` schema に従う JSON。"
+        }
+      ],
+      "description": "1 つの変更。docs/16 §7。"
+    },
+    "ObjectRef": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ObjectType"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "description": "`{ \"type\": ..., \"id\": ... }`"
+    },
+    "ObjectType": {
+      "type": "string",
+      "enum": [
+        "block",
+        "line",
+        "curve",
+        "connector",
+        "compound_shape",
+        "group",
+        "page",
+        "section",
+        "template",
+        "compound_shape_template",
+        "custom_arrow"
+      ],
+      "description": "対象オブジェクトの種別。docs/16 §7 の `ObjectType`。"
+    },
+    "Presence": {
+      "type": "object",
+      "properties": {
+        "client_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "default": ""
+        },
+        "color": {
+          "type": "string",
+          "default": ""
+        },
+        "page_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "editing_block": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "プレゼンス。docs/16 §11。"
+    },
+    "Cursor": {
+      "type": "object",
+      "properties": {
+        "page_id": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number",
+          "format": "float"
+        },
+        "y": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "page_id",
+        "x",
+        "y"
+      ]
+    },
+    "Warning": {
+      "type": "object",
+      "properties": {
+        "op_index": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op_index",
+        "code",
+        "message"
+      ],
+      "description": "適用はされたが注意が必要なもの。`ack.warnings`。"
+    },
+    "PeerInfo": {
+      "type": "object",
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "client_id",
+        "name",
+        "color"
+      ]
+    }
+  },
+  "$id": "https://hogandoc.dev/schema/collab-v1/ws_server_message.schema.json"
+}

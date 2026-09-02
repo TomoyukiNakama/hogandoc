@@ -1,0 +1,18 @@
+{
+  "kind": "add",
+  "object": { "type": "line", "id": "0199a000-0000-7000-8000-000000000003" },
+  "page_id": "0199a000-0000-7000-8000-0000000000aa",
+  "value": {
+    "id": "0199a000-0000-7000-8000-000000000003",
+    "x1": 20, "y1": 45, "x2": 190, "y2": 45,
+    "z": 0,
+    "thickness": 0.5,
+    "color": "000000",
+    "style": "Solid",
+    "dash_pattern": { "dash_mm": 3, "gap_mm": 2 },
+    "start_arrow": "None",
+    "end_arrow": "None",
+    "start_arrow_size": "Medium",
+    "end_arrow_size": "Medium"
+  }
+}

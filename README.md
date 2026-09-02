@@ -40,6 +40,20 @@ Microsoft OfficeのOpen XMLベースの図形(DrawingML)がアプリケーショ
   ./hogandoc-linux-x86_64.AppImage
   ```
 
+## AI エージェント連携（skill）
+
+hogandoc は起動中に `127.0.0.1:7420` でローカル API（REST / WebSocket）を提供しており、Claude Code などの AI エージェントから開いている文書を読み書き・描画確認できます（設定で「ローカル API サーバー」を有効にしてください。同じ PC・同じユーザーからのみ接続可能です）。
+
+そのための前提知識をまとめた skill `hogandoc-editor-api` を [`skills/hogandoc-editor-api/`](skills/hogandoc-editor-api/) で配布しています（プロトコル仕様・JSON Schema・Op の例を同梱）。
+
+導入方法（いずれか）:
+
+- skills CLI: `npx skills add TomoyukiNakama/hogandoc`
+- Claude Code: `skills/hogandoc-editor-api/` をプロジェクトの `.claude/skills/` か `~/.claude/skills/` にコピー
+- zip: 最新リリースの [`hogandoc-editor-api-skill.zip`](https://github.com/TomoyukiNakama/hogandoc/releases/latest/download/hogandoc-editor-api-skill.zip) を展開して同様に配置
+
+skill はエディタのリリースごとに更新されます（`references/VERSION` に対応バージョンを記載）。
+
 ## ライセンス
 
 本ソフトウェアはプロプライエタリ（独自ライセンス）です。詳細は [LICENSE](LICENSE) を参照してください。
@@ -78,6 +92,20 @@ See the [Releases page](https://github.com/TomoyukiNakama/hogandoc/releases) for
   chmod +x hogandoc-linux-x86_64.AppImage
   ./hogandoc-linux-x86_64.AppImage
   ```
+
+### AI agent integration (skill)
+
+While running, hogandoc serves a local API (REST / WebSocket) on `127.0.0.1:7420` so AI agents such as Claude Code can read and edit the open document and render it to PNG for verification (enable "local API server" in Settings; only processes on the same machine and user can connect).
+
+The `hogandoc-editor-api` skill in [`skills/hogandoc-editor-api/`](skills/hogandoc-editor-api/) bundles everything an agent needs: the protocol spec, JSON Schema and tested Op examples.
+
+Install with one of:
+
+- skills CLI: `npx skills add TomoyukiNakama/hogandoc`
+- Claude Code: copy `skills/hogandoc-editor-api/` into your project's `.claude/skills/` or `~/.claude/skills/`
+- zip: extract [`hogandoc-editor-api-skill.zip`](https://github.com/TomoyukiNakama/hogandoc/releases/latest/download/hogandoc-editor-api-skill.zip) from the latest release and place it the same way
+
+The skill is refreshed on every editor release (`references/VERSION` names the matching version).
 
 ### License
 
